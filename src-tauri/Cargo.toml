@@ -22,7 +22,12 @@ uuid = { version = "1", features = ["v4"] }
 librqbit = "9.0.1"
 # M0.5 SPIKE: async runtime for the local experiments
 # (fixture HTTP server, gateway, FileStream reads).
-tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "time", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "time", "macros", "fs"] }
+sha2 = "0.11.0"
+reqwest = { version = "0.13.5", features = ["stream"] }
+url = "2.5.8"
+bytes = { version = "1.12.1", default-features = false }
+futures-util = { version = "0.3.34", default-features = false }
 
 [profile.release]
 strip = true

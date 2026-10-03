@@ -1,3 +1,4 @@
+pub mod download;
 pub mod ids;
 pub mod library;
 pub mod playback;

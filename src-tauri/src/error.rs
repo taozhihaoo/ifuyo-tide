@@ -18,6 +18,10 @@ pub enum TideError {
     /// token). Never leaks details to the frontend beyond the code.
     #[error("{0}")]
     Security(String),
+    /// Domain failures of the download engine (M1 §45) — one wrapper
+    /// variant instead of a second error type.
+    #[error(transparent)]
+    Download(#[from] crate::core::download::DownloadFailure),
     #[error("{0}")]
     Internal(String),
 }
@@ -31,6 +35,7 @@ impl TideError {
             TideError::Persistence(_) => "PERSISTENCE",
             TideError::StateTransition { .. } => "STATE_TRANSITION",
             TideError::Security(_) => "SECURITY",
+            TideError::Download(failure) => failure.code(),
             TideError::Internal(_) => "INTERNAL",
         }
     }
