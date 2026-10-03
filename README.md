@@ -4,7 +4,7 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M2 — Task Persistence / Crash Recovery / Resume complete.**
+> **Current status: M3 — Torrent Engine complete.**
 > The core chain `Torrent → librqbit → partial data → local Range
 > Gateway → WebView2 <video> → play/seek` has been validated end-to-end
 > with measured data (see `docs/M0.5-report.md`). Tide can start, create
@@ -30,7 +30,7 @@ upload of your data.
 | M0.5 | Technology spike (streaming, WebView2 playback, librqbit feasibility) | **done** — full chain validated |
 | M1 | HTTP/HTTPS download core | **done** — pause/resume/retry/checksum validated |
 | M2 | Crash-safe persistence & resume | **done** — validated with crash-injection tests |
-| M3 | Torrent engine (librqbit) | planned |
+| M3 | Torrent engine (librqbit) | **done** — loopback-swarm tested |
 | M4 | Progressive streaming, Range gateway, demand scheduler | planned |
 | M5 | Player | planned |
 | M6 | Local media library | planned |
