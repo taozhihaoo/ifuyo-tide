@@ -7,8 +7,8 @@
 
 use crate::error::TideError;
 use rusqlite::{params, Connection, OptionalExtension};
-use std::sync::{Mutex, PoisonError};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 /// A persisted download task row mapped to the domain vocabulary.
 #[derive(Debug, Clone, PartialEq)]
@@ -205,7 +205,11 @@ impl DownloadRepository {
     /// Time/byte-throttled checkpoint (M2 §20-§23): single-statement
     /// atomic update of progress + validators. Written AFTER the bytes
     /// are durably in the .part file, so DB ≤ file holds.
-    pub fn update_checkpoint(&self, checkpoint: &DownloadCheckpoint, id: &str) -> Result<(), TideError> {
+    pub fn update_checkpoint(
+        &self,
+        checkpoint: &DownloadCheckpoint,
+        id: &str,
+    ) -> Result<(), TideError> {
         self.conn().execute(
             "UPDATE download_tasks
              SET downloaded_bytes = ?2, total_bytes = ?3, etag = ?4,
@@ -384,8 +388,15 @@ mod tests {
     fn state_update_is_atomic_multi_field() {
         let repo = DownloadRepository::open_in_memory().unwrap();
         repo.insert(&sample("t1", "running")).unwrap();
-        repo.update_state("t1", "paused", 1234, Some(("DOWNLOAD_TIMEOUT", "timed out")), None, None)
-            .unwrap();
+        repo.update_state(
+            "t1",
+            "paused",
+            1234,
+            Some(("DOWNLOAD_TIMEOUT", "timed out")),
+            None,
+            None,
+        )
+        .unwrap();
         let r = repo.get("t1").unwrap().unwrap();
         assert_eq!(r.state, "paused");
         assert_eq!(r.downloaded_bytes, 1234);

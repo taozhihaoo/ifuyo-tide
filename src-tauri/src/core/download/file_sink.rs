@@ -56,6 +56,7 @@ pub fn classify_io_error(err: &std::io::Error, context: &str) -> TideError {
         _ => DownloadFailure::FileWrite,
     };
     // Context stays internal to the log; the frontend gets code+message.
+    eprintln!("IO_ERR_DETAIL: {context}: {err} (kind={:?})", err.kind());
     crate::diagnostics::warn(
         "download.io_error",
         &[("context", context), ("kind", &format!("{:?}", err.kind()))],
@@ -152,6 +153,12 @@ impl FileSink {
             file.set_len(resume_offset)
                 .map_err(|err| classify_io_error(&err, "truncate part"))?;
         }
+        eprintln!(
+            "SINK_DEBUG: open part={} resume_offset={} exists={}",
+            part_path.display(),
+            resume_offset,
+            part_path.exists()
+        );
         file.seek(SeekFrom::Start(resume_offset))
             .map_err(|err| classify_io_error(&err, "seek part"))?;
         Ok(FileSink {
@@ -217,13 +224,26 @@ impl FileSink {
         file.sync_all()
             .map_err(|err| classify_io_error(&err, "sync part"))?;
         drop(file);
-        std::fs::rename(&self.part_path, &self.final_path)
-            .map_err(|err| classify_io_error(&err, "atomic rename"))?;
+        eprintln!(
+            "RENAME_DEBUG: {} -> {} (part_exists_before={})",
+            self.part_path.display(),
+            self.final_path.display(),
+            self.part_path.exists()
+        );
+        std::fs::rename(&self.part_path, &self.final_path).map_err(|err| {
+            eprintln!("RENAME_DEBUG: FAILED: {err}");
+            classify_io_error(&err, "atomic rename")
+        })?;
         Ok(self.final_path)
     }
 
     /// Removes the part file (cancel semantics: discard partial data).
     pub fn discard(part_path: &Path) {
+        eprintln!(
+            "SINK_DEBUG: discard part={}(exists={})",
+            part_path.display(),
+            part_path.exists()
+        );
         let _ = std::fs::remove_file(part_path);
     }
 }

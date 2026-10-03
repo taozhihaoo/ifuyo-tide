@@ -141,11 +141,27 @@ pub fn decide(record: &DownloadTaskRecord, fs: FilesystemFacts) -> RecoveryDecis
 
     // Active task (created/ready/running/paused): reconcile the part.
     match fs.part_bytes {
-        None => RecoveryDecision {
-            action: MarkResumable,
-            reason: ArtifactMissing,
-            safe_resume_bytes: 0,
-        },
+        None => {
+            // Crash-D variant (M2 §54 AfterFinalizeBeforeDBUpdate): the
+            // part was already renamed to the final artifact (or the
+            // artifact otherwise completed) but the DB never recorded
+            // Completed. A final whose size matches the known total IS
+            // the completed representation.
+            if let (Some(total), Some(final_bytes)) = (record.total_bytes, fs.final_bytes) {
+                if total > 0 && final_bytes == total {
+                    return RecoveryDecision {
+                        action: Finalize,
+                        reason: FinalArtifactDetected,
+                        safe_resume_bytes: final_bytes,
+                    };
+                }
+            }
+            RecoveryDecision {
+                action: MarkResumable,
+                reason: ArtifactMissing,
+                safe_resume_bytes: 0,
+            }
+        }
         Some(part_bytes) => {
             // Crash C detection: the part holds the whole representation.
             if record.total_bytes == Some(part_bytes) && part_bytes > 0 {

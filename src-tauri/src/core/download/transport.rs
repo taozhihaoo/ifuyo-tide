@@ -52,6 +52,7 @@ type BodyStream =
     std::pin::Pin<Box<dyn futures_util::Stream<Item = reqwest::Result<Bytes>> + Send>>;
 
 pub fn map_reqwest_error(err: &reqwest::Error) -> TideError {
+    eprintln!("REQWEST_ERR: {err}");
     let failure = if err.is_timeout() {
         super::url::DownloadFailure::Timeout
     } else if err.is_status() {

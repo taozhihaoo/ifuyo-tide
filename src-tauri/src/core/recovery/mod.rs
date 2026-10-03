@@ -8,4 +8,4 @@ pub mod decision;
 pub mod service;
 
 pub use decision::{FilesystemFacts, RecoveryAction, RecoveryDecision, RecoveryReason};
-pub use service::{recover_all, reconcile_one, RecoveryOutcome};
+pub use service::{reconcile_one, recover_all, RecoveryOutcome};

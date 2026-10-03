@@ -5,8 +5,8 @@
 //! decisions converge because each scan re-reads the reconciled truth).
 
 use super::decision::{decide, FilesystemFacts, RecoveryAction};
-use crate::core::download::DownloadShared;
 use crate::core::download::DownloadRequest;
+use crate::core::download::DownloadShared;
 use crate::error::TideError;
 use crate::persistence::repositories::DownloadTaskRecord;
 use std::path::Path;
@@ -77,14 +77,20 @@ pub fn reconcile_one(
             }
         }
         RecoveryAction::Finalize => {
-            // Crash C: the part holds the complete representation. Verify
-            // the configured checksum (if any) BEFORE renaming — startup
-            // recovery finalization must respect the same rules as the
-            // engine (M2 §60).
+            // Complete artifact detected. Two shapes:
+            //  * part exists  → verify (if configured) then rename
+            //  * part missing → the FINAL file already holds the bytes
+            //    (crash after finalize, before DB update) — verify it
+            //    in place and mark Completed.
             let checksum_ok = match (&record.checksum_algorithm, &record.checksum_expected) {
                 (Some(_), Some(expected)) => {
+                    let verify_path = if record.part_path.exists() {
+                        record.part_path.clone()
+                    } else {
+                        record.final_path.clone()
+                    };
                     let mut writer = crate::core::download::checksum::ChecksumWriter::new();
-                    let mut file = std::fs::File::open(&record.part_path)?;
+                    let mut file = std::fs::File::open(&verify_path)?;
                     use std::io::Read;
                     let mut buf = vec![0u8; 256 * 1024];
                     loop {
@@ -106,7 +112,8 @@ pub fn reconcile_one(
                                 )?;
                                 return Ok(RecoveryOutcome {
                                     task_id: record.id.clone(),
-                                    action: crate::core::recovery::decision::RecoveryAction::MarkFailed,
+                                    action:
+                                        crate::core::recovery::decision::RecoveryAction::MarkFailed,
                                     reason: "recovery_finalize_failed",
                                     safe_resume_bytes: decision.safe_resume_bytes,
                                 });
@@ -117,8 +124,10 @@ pub fn reconcile_one(
                 }
                 _ => true, // no checksum configured: size equality is the check
             };
-            if checksum_ok {
+            if checksum_ok && record.part_path.exists() {
                 std::fs::rename(&record.part_path, &record.final_path)?;
+            }
+            if checksum_ok {
                 repo.update_state(
                     &record.id,
                     "completed",
@@ -128,8 +137,8 @@ pub fn reconcile_one(
                     Some(crate::core::time::now_unix_ms()),
                 )?;
             } else {
-                // Checksum mismatch on a complete part: keep the part for
-                // diagnosis, fail honestly (mirrors the engine, M1 §30).
+                // Checksum mismatch on a complete artifact: keep artifacts
+                // for diagnosis, fail honestly (mirrors the engine, M1 §30).
                 repo.update_state(
                     &record.id,
                     "failed",
@@ -151,7 +160,10 @@ pub fn reconcile_one(
                 &record.id,
                 "failed",
                 0,
-                Some(("DOWNLOAD_ARTIFACT_MISSING", "final artifact missing after completion")),
+                Some((
+                    "DOWNLOAD_ARTIFACT_MISSING",
+                    "final artifact missing after completion",
+                )),
                 Some(decision.reason.as_str()),
                 None,
             )?;
@@ -161,7 +173,10 @@ pub fn reconcile_one(
                 &record.id,
                 &record.state,
                 record.downloaded_bytes,
-                Some(("DOWNLOAD_DESTINATION_UNAVAILABLE", "destination directory unavailable")),
+                Some((
+                    "DOWNLOAD_DESTINATION_UNAVAILABLE",
+                    "destination directory unavailable",
+                )),
                 Some(decision.reason.as_str()),
                 None,
             )?;
@@ -223,9 +238,8 @@ fn restored_shared(
         &record.source_url,
         record.allow_private,
     )?;
-    let policy = crate::core::download::file_sink::OverwritePolicy::parse(
-        &record.overwrite_policy,
-    )?;
+    let policy =
+        crate::core::download::file_sink::OverwritePolicy::parse(&record.overwrite_policy)?;
     let checksum = record
         .checksum_algorithm
         .as_deref()
@@ -235,7 +249,13 @@ fn restored_shared(
                 .map(|algo| (algo, hex.to_string()))
         })
         .transpose()?;
-    let request = DownloadRequest::new(validated, record.destination_dir.clone(), None, policy, checksum)?;
+    let request = DownloadRequest::new(
+        validated,
+        record.destination_dir.clone(),
+        None,
+        policy,
+        checksum,
+    )?;
     // The request gets a NEW id inside `new`; restored tasks keep their
     // persisted identity (M2 §14: the id never changes) — overwrite it.
     let mut request = request;

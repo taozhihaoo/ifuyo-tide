@@ -133,7 +133,10 @@ impl DownloadShared {
             etag: validators.etag.clone(),
             last_modified: validators.last_modified.clone(),
         };
-        if let Err(err) = self.repo.update_checkpoint(&checkpoint, &self.request.download_id) {
+        if let Err(err) = self
+            .repo
+            .update_checkpoint(&checkpoint, &self.request.download_id)
+        {
             crate::diagnostics::warn(
                 "download.checkpoint_failed",
                 &[
@@ -280,7 +283,10 @@ impl DownloadEngine {
             // Placeholder paths until the first response resolves them
             // (update_resolved_paths overwrites these).
             part_path: shared.request.destination_dir.join(format!("{id}.part")),
-            final_path: shared.request.destination_dir.join(format!("{id}.download")),
+            final_path: shared
+                .request
+                .destination_dir
+                .join(format!("{id}.download")),
             overwrite_policy: match shared.request.overwrite_policy {
                 OverwritePolicy::Fail => "fail".to_string(),
                 OverwritePolicy::Overwrite => "overwrite".to_string(),
@@ -321,7 +327,12 @@ impl DownloadEngine {
                 inner.lifecycle = DownloadLifecycle::Failed;
                 inner.error = Some((err.code().to_string(), err.message()));
                 drop(inner);
-                task_shared.persist_state("failed", task_shared.lock_inner().downloaded, Some((err.code(), &err.message())), None);
+                task_shared.persist_state(
+                    "failed",
+                    task_shared.lock_inner().downloaded,
+                    Some((err.code(), &err.message())),
+                    None,
+                );
             }
         });
         Ok(shared)
@@ -407,9 +418,12 @@ impl DownloadEngine {
             .get(download_id)
             .await
             .ok_or_else(|| TideError::NotFound(format!("download not found: {download_id}")))?;
-        if !matches!(entry.status().lifecycle, DownloadLifecycle::Paused) {
+        if !matches!(
+            entry.status().lifecycle,
+            DownloadLifecycle::Paused | DownloadLifecycle::Ready
+        ) {
             return Err(TideError::InvalidInput(format!(
-                "download {download_id} is not paused"
+                "download {download_id} is not paused or resumable-ready"
             )));
         }
         // Re-validate the persisted source (M2 §36): the database is not
@@ -439,12 +453,9 @@ impl DownloadEngine {
             Some(entry) => entry,
             None => {
                 // Post-restart: restore the runtime entry from the record.
-                let record = self
-                    .repo
-                    .get(download_id)?
-                    .ok_or_else(|| {
-                        TideError::NotFound(format!("download not found: {download_id}"))
-                    })?;
+                let record = self.repo.get(download_id)?.ok_or_else(|| {
+                    TideError::NotFound(format!("download not found: {download_id}"))
+                })?;
                 let shared = self.shared_from_record(&record)?;
                 self.register_restored(shared.clone());
                 shared
@@ -511,12 +522,24 @@ impl DownloadEngine {
 }
 
 fn spawn_run(shared: &Arc<DownloadShared>, app: Option<tauri::AppHandle>) {
+    eprintln!(
+        "SPAWN_DEBUG: spawning run for id={}",
+        shared.request.download_id
+    );
     let task_shared = shared.clone();
     tokio::spawn(async move {
         if let Err(err) = run_with_slot(&task_shared, app).await {
-            let mut inner = task_shared.lock_inner();
-            inner.lifecycle = DownloadLifecycle::Failed;
-            inner.error = Some((err.code().to_string(), err.message()));
+            let settled = matches!(
+                task_shared.status().lifecycle,
+                DownloadLifecycle::Completed
+                    | DownloadLifecycle::Cancelled
+                    | DownloadLifecycle::Paused
+            );
+            if !settled {
+                let mut inner = task_shared.lock_inner();
+                inner.lifecycle = DownloadLifecycle::Failed;
+                inner.error = Some((err.code().to_string(), err.message()));
+            }
         }
     });
 }
@@ -860,6 +883,11 @@ async fn run_download(
                     }
                 }
                 let final_path = sink.finalize()?;
+                eprintln!(
+                    "COMPLETE_DEBUG: id={} renamed to {}",
+                    shared.request.download_id,
+                    final_path.display()
+                );
                 {
                     let mut inner = shared.lock_inner();
                     inner.lifecycle = DownloadLifecycle::Completed;
@@ -990,7 +1018,10 @@ async fn decide_retry(
         inner.phase = DownloadPhase::Retrying;
         inner.attempts = *attempts;
     }
-    if let Err(err) = shared.repo.update_retry_count(&shared.request.download_id, *attempts) {
+    if let Err(err) = shared
+        .repo
+        .update_retry_count(&shared.request.download_id, *attempts)
+    {
         crate::diagnostics::warn("download.persist_retry_failed", &[("code", err.code())]);
     }
     crate::diagnostics::info(
@@ -1027,12 +1058,34 @@ fn set_phase(shared: &Arc<DownloadShared>, phase: DownloadPhase) {
 }
 
 fn set_error(shared: &Arc<DownloadShared>, err: &TideError) {
+    eprintln!(
+        "SET_ERROR_DEBUG: id={} code={} lifecycle={:?}",
+        shared.request.download_id,
+        err.code(),
+        shared.status().lifecycle
+    );
+    let downloaded;
     {
         let mut inner = shared.lock_inner();
+        // A pause/cancel/complete that landed during the retry backoff is
+        // settled user intent or success — never downgrade it to Failed
+        // (this race previously overwrote a Completed row).
+        if matches!(
+            inner.lifecycle,
+            DownloadLifecycle::Completed | DownloadLifecycle::Cancelled | DownloadLifecycle::Paused
+        ) {
+            return;
+        }
         inner.lifecycle = DownloadLifecycle::Failed;
         inner.error = Some((err.code().to_string(), err.message()));
+        downloaded = inner.downloaded;
     }
-    shared.persist_state("failed", shared.lock_inner().downloaded, Some((err.code(), &err.message())), None);
+    shared.persist_state(
+        "failed",
+        downloaded,
+        Some((err.code(), &err.message())),
+        None,
+    );
 }
 
 /// Waits until pause/cancel is requested (never completes on its own).
