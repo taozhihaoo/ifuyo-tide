@@ -4,12 +4,11 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M3 — Torrent Engine complete.**
-> The core chain `Torrent → librqbit → partial data → local Range
-> Gateway → WebView2 <video> → play/seek` has been validated end-to-end
-> with measured data (see `docs/M0.5-report.md`). Tide can start, create
-> and persist tasks, and survive restarts; downloading real user
-> sources lands in M1/M3.
+> **Current status: M4(上) — Progressive Streaming core complete.**
+> A download's `.part`, a finished file and a torrent file all stream
+> through the same loopback Range Gateway into one real player: press
+> Play on any task with bytes on disk and watch while it downloads
+> (see `docs/M4-report.md`).
 
 ---
 
@@ -31,7 +30,7 @@ upload of your data.
 | M1 | HTTP/HTTPS download core | **done** — pause/resume/retry/checksum validated |
 | M2 | Crash-safe persistence & resume | **done** — validated with crash-injection tests |
 | M3 | Torrent engine (librqbit) | **done** — loopback-swarm tested |
-| M4 | Progressive streaming, Range gateway, demand scheduler | planned |
+| M4 | Progressive streaming, Range gateway, demand scheduler | **in progress** — upper half done: unified gateway + player streaming |
 | M5 | Player | planned |
 | M6 | Local media library | planned |
 | M7 | Smart scheduler | planned |
@@ -55,8 +54,10 @@ SQLite (migrations, %LOCALAPPDATA%\ifuyo\Tide\database)
 
 The download/playback chain
 (`HTTP Engine / Torrent Engine → Resource → Availability → Scheduler →
-Gateway → Player`) is **designed but not implemented** in M0. Details:
-[docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md).
+Gateway → Player`) is **implemented as of M4(上)** — one gateway, one
+player, every source kind. Details:
+[docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md),
+[docs/M4-streaming-architecture.md](docs/M4-streaming-architecture.md).
 
 ## Development setup
 
