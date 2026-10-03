@@ -195,11 +195,11 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn http_resource_reads_range() {
-        // Served by the M1 fixture server pattern would need a server;
-        // here we exercise the pure helper via a local ephemeral listener.
+        // Mini origin: answers a single-byte-range GET with 206 and the
+        // exact requested slice of the patterned payload.
+        let payload: Vec<u8> = (0..4096u64).map(|i| (i % 251) as u8).collect();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let payload: Vec<u8> = (0..4096u64).map(|i| (i % 251) as u8).collect();
         let server_payload = payload.clone();
         tokio::spawn(async move {
             loop {
@@ -209,24 +209,37 @@ mod tests {
                     use tokio::io::{AsyncReadExt, AsyncWriteExt};
                     let mut buf = vec![0u8; 4096];
                     let _ = sock.read(&mut buf).await;
+                    let text = String::from_utf8_lossy(&buf);
+                    let range = text
+                        .lines()
+                        .find(|l| l.to_ascii_lowercase().starts_with("range:"))
+                        .and_then(|l| l.split_once(':'))
+                        .map(|(_, v)| v.trim().trim_start_matches("bytes=").to_string())
+                        .unwrap_or_default();
+                    let (start, end) = range.split_once('-').unwrap_or(("0", "0"));
+                    let start: u64 = start.parse().unwrap_or(0);
+                    let end: u64 = end.parse().unwrap_or(0);
+                    let slice = &body[start as usize..=(end.min(body.len() as u64 - 1)) as usize];
                     let head = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {start}-{end}/{}\r\nConnection: close\r\n\r\n",
+                        slice.len(),
                         body.len()
                     );
                     let _ = sock.write_all(head.as_bytes()).await;
-                    let _ = sock.write_all(&body).await;
+                    let _ = sock.write_all(slice).await;
                 });
             }
         });
         let res = StreamingResource::Http {
-            addr,
-            path: "/f".into(),
+            url: format!("http://{addr}/f.bin"),
             len: payload.len() as u64,
-            url: format!("http://{addr}/f"),
+            accept_ranges: true,
         };
-        // NOTE: StreamingResource::Http.read_range speaks HTTP but the
-        // field set here only carries addr/path/len — the full URL form
-        // is covered by gateway integration tests.
-        let _ = res;
+        let bytes = res
+            .read_range(ByteRange::new(100, 1124).unwrap())
+            .await
+            .expect("read range");
+        assert_eq!(bytes.len(), 1024);
+        assert_eq!(bytes[..], payload[100..1124]);
     }
 }

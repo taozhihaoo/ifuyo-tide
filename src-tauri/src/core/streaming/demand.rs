@@ -52,7 +52,7 @@ pub enum DemandState {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DemandId(pub u64);
 
 #[derive(Debug, Clone)]
@@ -204,8 +204,11 @@ mod tests {
         let next = sched.next_for("r").unwrap();
         assert_eq!(next.id, pb, "playback demand must win over {bg:?}");
         sched.complete(pb);
-        assert!(sched.next_for("r").is_none(), "completed demand is gone");
-        let _ = bg;
+        // The background demand stays queued — playback only outranks it.
+        let next = sched.next_for("r").unwrap();
+        assert_eq!(next.id, bg);
+        sched.complete(bg);
+        assert!(sched.next_for("r").is_none(), "all demands satisfied");
     }
 
     #[test]

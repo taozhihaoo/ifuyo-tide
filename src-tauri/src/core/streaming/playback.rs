@@ -123,6 +123,12 @@ impl PlaybackManager {
         self.gateway.port
     }
 
+    /// Per-read resource wait timeout (M4(上) §96/§97); passthrough for
+    /// tests and tuning.
+    pub fn set_read_timeout_ms(&self, ms: u64) {
+        self.gateway.set_read_timeout_ms(ms);
+    }
+
     /// Idle-session reaping (M4(上) §55): revokes gateway access and
     /// queued demands along with the manager entry.
     pub fn reap_expired(&self) -> usize {
