@@ -2,6 +2,12 @@
 
 Test media and payloads for Tide.
 
+The `media/` subdirectory is **generated, not committed**: run
+`scripts/generate-test-media.sh <path-to-ffmpeg>` to (re)create it. All
+files there are synthesized locally (ffmpeg `testsrc2` + sine audio) and
+therefore license-clean; see `scripts/generate-test-media.sh` for the
+exact recipes and `docs/M0.5-*.md` for what each file is used for.
+
 **Allowed in this directory:**
 
 - self-made test media (generated tones, test patterns, synthetic videos)

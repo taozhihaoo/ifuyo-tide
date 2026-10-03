@@ -17,6 +17,12 @@ src-tauri/gen/schemas/
 *.db-shm
 *.log
 
+# generated spike test media (regenerate: scripts/generate-test-media.sh)
+tests/fixtures/media/
+
+# local dev tools (e.g. ffmpeg install used by the media script)
+tools/
+
 # environment / secrets
 .env
 .env.*
