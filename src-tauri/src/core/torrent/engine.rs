@@ -58,6 +58,9 @@ pub struct AddedTorrent {
     pub already_managed: bool,
 }
 
+/// Clone shares the underlying librqbit Session (Arc) — streaming
+/// resources reach the engine through it (M4(上)).
+#[derive(Clone)]
 pub struct TorrentEngine {
     session: Arc<Session>,
     initial_peers: Option<Vec<SocketAddr>>,

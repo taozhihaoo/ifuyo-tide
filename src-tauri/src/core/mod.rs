@@ -6,6 +6,7 @@ pub mod recovery;
 pub mod resource;
 pub mod scheduler;
 pub mod source;
+pub mod streaming;
 pub mod task;
 pub mod time;
 pub mod torrent;
