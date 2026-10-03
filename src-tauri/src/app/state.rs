@@ -4,6 +4,7 @@
 //! and handed to commands explicitly through Tauri's managed state.
 
 use crate::core::download::DownloadEngine;
+use crate::core::streaming::playback::PlaybackManager;
 
 use crate::error::TideError;
 use crate::persistence::repositories::{
@@ -23,6 +24,8 @@ pub struct AppState {
     /// M3: torrent engine (librqbit adapter) + its repository.
     pub torrent_engine: crate::core::torrent::TorrentEngine,
     pub torrent_repository: Arc<TorrentRepository>,
+    /// M4(上): playback sessions + the streaming gateway.
+    pub playback: Arc<PlaybackManager>,
 }
 
 impl AppState {
@@ -31,6 +34,7 @@ impl AppState {
         download_engine: DownloadEngine,
         torrent_engine: crate::core::torrent::TorrentEngine,
         torrent_repository: Arc<TorrentRepository>,
+        playback: Arc<PlaybackManager>,
     ) -> Self {
         AppState {
             db: Mutex::new(conn),
@@ -40,6 +44,7 @@ impl AppState {
             download_engine,
             torrent_engine,
             torrent_repository,
+            playback,
         }
     }
 

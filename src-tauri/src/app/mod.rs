@@ -84,7 +84,24 @@ pub fn run() {
         }
         Err(err) => fatal_startup("torrent recovery failed", &err),
     }
-    let app_state = AppState::new(conn, download_engine, torrent_engine, torrent_repository);
+    // M4(上): playback manager owns the ONE gateway + the demand
+    // scheduler (playback beats background, M4(上) §71).
+    let demand_scheduler = std::sync::Arc::new(
+        crate::core::streaming::demand::DemandScheduler::default(),
+    );
+    let playback = std::sync::Arc::new(
+        tauri::async_runtime::block_on(crate::core::streaming::PlaybackManager::new(
+            demand_scheduler,
+        ))
+        .unwrap_or_else(|err| fatal_startup("failed to start streaming gateway", &err)),
+    );
+    let app_state = AppState::new(
+        conn,
+        download_engine,
+        torrent_engine,
+        torrent_repository,
+        playback,
+    );
 
     // M0.5 SPIKE: separate managed state for experiment infrastructure.
     let spike_state = crate::spike::state::SpikeState::default();
@@ -121,15 +138,11 @@ pub fn run() {
             commands::torrent::resume_torrent,
             commands::torrent::remove_torrent,
             commands::torrent::delete_torrent_data,
-            // M3 torrent commands
-            commands::torrent::inspect_torrent_source,
-            commands::torrent::create_torrent_task,
-            commands::torrent::list_torrents,
-            commands::torrent::set_torrent_file_selection,
-            commands::torrent::pause_torrent,
-            commands::torrent::resume_torrent,
-            commands::torrent::remove_torrent,
-            commands::torrent::delete_torrent_data,
+            // M4(上) playback commands
+            commands::playback::create_playback_session,
+            commands::playback::stop_playback_session,
+            commands::playback::get_playback_info,
+            commands::playback::notify_seek,
             // M0.5 SPIKE commands
             commands::spike::spike_status,
             commands::spike::spike_list_media,

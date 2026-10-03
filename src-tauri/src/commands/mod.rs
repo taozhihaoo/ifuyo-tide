@@ -9,6 +9,7 @@
 
 pub mod app_info;
 pub mod download;
+pub mod playback;
 pub mod settings;
 pub mod spike;
 pub mod tasks;
