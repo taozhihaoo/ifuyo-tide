@@ -394,3 +394,69 @@ button:focus-visible {
   word-break: break-all;
   user-select: text;
 }
+
+/* ---------- M0.5 spike view ---------- */
+
+.spike-view h3 {
+  margin: 26px 0 10px;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.spike-status {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.spike-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.spike-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 10px;
+}
+
+.spike-table th,
+.spike-table td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.spike-table th {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.spike-detail {
+  word-break: break-all;
+  color: var(--text-dim);
+  max-width: 420px;
+}
+
+.spike-error {
+  color: var(--danger);
+}
+
+.spike-view video {
+  display: block;
+  margin: 10px 0;
+  border-radius: var(--radius);
+  background: #000;
+  max-width: 100%;
+}

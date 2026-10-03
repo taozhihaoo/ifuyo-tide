@@ -1,4 +1,4 @@
-export type ViewId = "downloads" | "library" | "player" | "settings";
+export type ViewId = "downloads" | "library" | "player" | "settings" | "spike";
 
 interface SidebarProps {
   active: ViewId;
@@ -10,6 +10,7 @@ const ITEMS: Array<{ id: ViewId; label: string }> = [
   { id: "library", label: "Library" },
   { id: "player", label: "Player" },
   { id: "settings", label: "Settings" },
+  { id: "spike", label: "Spike (M0.5)" },
 ];
 
 export function Sidebar({ active, onNavigate }: SidebarProps) {

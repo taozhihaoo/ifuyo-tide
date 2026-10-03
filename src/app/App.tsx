@@ -4,6 +4,7 @@ import { LibraryView } from "../features/library/LibraryView";
 import { PlayerView } from "../features/player/PlayerView";
 import { TasksView } from "../features/tasks/TasksView";
 import { SettingsView } from "../features/settings/SettingsView";
+import { SpikeView } from "../features/spike/SpikeView";
 
 export default function App() {
   const [view, setView] = useState<ViewId>("downloads");
@@ -35,6 +36,7 @@ export default function App() {
           {view === "library" && <LibraryView />}
           {view === "player" && <PlayerView />}
           {view === "settings" && <SettingsView />}
+          {view === "spike" && <SpikeView />}
         </main>
       </div>
     </div>
