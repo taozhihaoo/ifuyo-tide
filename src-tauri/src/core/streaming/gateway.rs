@@ -1,12 +1,16 @@
-//! Range Gateway (M4(上) §37–§50/§71): the ONE Tide streaming gateway.
+//! Range Gateway (M4(上) §37–§50/§71, M4(下) §96/§107/§115–§117):
+//! the ONE Tide streaming gateway.
 //!
 //! Security: loopback-only bind on a random port, per-session UUID
-//! tokens (never paths), Host header must be loopback, single-range
-//! 200/206/416/400, bounded streaming chunks, reads WAIT for torrent
-//! availability through the resource. Gateway reads flow through the
-//! DemandScheduler so playback beats background (M4(上) §71).
+//! tokens (never paths), Host-header loopback validation, GET/HEAD
+//! only (405 otherwise), single-range 200/206/416/400, 503 before
+//! headers when the resource is gone, bounded streaming chunks, reads
+//! WAIT for availability through the resource with a per-read timeout.
+//! Gateway reads flow through the DemandScheduler so playback beats
+//! background (M4(上) §71). Every session carries a cancellation watch
+//! — closing a session aborts its in-flight reads promptly (§116/§137).
 
-use super::demand::DemandScheduler;
+use super::demand::{DemandId, DemandScheduler};
 use super::resource::StreamingResource;
 use crate::core::resource::ByteRange;
 use crate::error::TideError;
@@ -24,6 +28,15 @@ struct SessionEntry {
     resource: tokio::sync::Mutex<StreamingResource>,
     created_at: Instant,
     ttl: Option<Duration>,
+    /// Closed on session stop/reap: in-flight reads select on this and
+    /// abort instead of serving a dead session (M4(下) §116/§137).
+    closed: Arc<tokio::sync::watch::Sender<bool>>,
+}
+
+impl SessionEntry {
+    fn is_closed(&self) -> bool {
+        *self.closed.borrow()
+    }
 }
 
 fn valid_host(host: &str) -> bool {
@@ -51,9 +64,9 @@ async fn read_request(stream: &mut TcpStream) -> Result<ParsedRequest, TideError
         let n = stream
             .read(&mut chunk)
             .await
-            .map_err(|_| TideError::InvalidInput("read failed".into()))?;
+            .map_err(|_| gateway_failure("read failed"))?;
         if n == 0 {
-            return Err(TideError::InvalidInput("connection closed early".into()));
+            return Err(gateway_failure("connection closed early"));
         }
         buf.extend_from_slice(&chunk[..n]);
         if buf.len() > MAX_HEADER_BYTES {
@@ -88,6 +101,10 @@ async fn read_request(stream: &mut TcpStream) -> Result<ParsedRequest, TideError
     })
 }
 
+fn gateway_failure(what: &str) -> TideError {
+    TideError::Streaming(crate::error::StreamingFailure::Gateway(what.into()))
+}
+
 pub struct StreamingGateway {
     pub port: u16,
     sessions: Arc<Mutex<HashMap<String, Arc<SessionEntry>>>>,
@@ -98,12 +115,11 @@ pub struct StreamingGateway {
 impl StreamingGateway {
     /// Binds on a random loopback port (M4(上) §38/§39).
     pub async fn start(scheduler: Arc<DemandScheduler>) -> Result<StreamingGateway, TideError> {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| TideError::Internal("gateway bind failed".into()))?;
+        let listener =
+            TcpListener::bind("127.0.0.1:0").await.map_err(|_| gateway_failure("bind failed"))?;
         let port = listener
             .local_addr()
-            .map_err(|_| TideError::Internal("gateway local addr failed".into()))?
+            .map_err(|_| gateway_failure("local addr failed"))?
             .port();
         let (done, mut done_rx) = tokio::sync::watch::channel(false);
         let sessions: Arc<Mutex<HashMap<String, Arc<SessionEntry>>>> =
@@ -147,6 +163,7 @@ impl StreamingGateway {
         ttl: Option<Duration>,
     ) -> Result<String, TideError> {
         let token = crate::core::ids::new_id();
+        let (closed, _) = tokio::sync::watch::channel(false);
         self.sessions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -156,17 +173,26 @@ impl StreamingGateway {
                     resource: tokio::sync::Mutex::new(resource),
                     created_at: Instant::now(),
                     ttl,
+                    closed: Arc::new(closed),
                 }),
             );
         Ok(token)
     }
 
+    /// Revokes the session and signals its in-flight reads to abort.
     pub fn remove_session(&self, token: &str) -> bool {
-        self.sessions
+        let entry = self
+            .sessions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .remove(token)
-            .is_some()
+            .remove(token);
+        match entry {
+            Some(entry) => {
+                let _ = entry.closed.send(true);
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn session_url(&self, token: &str) -> String {
@@ -183,6 +209,18 @@ impl StreamingGateway {
             .unwrap_or_else(PoisonError::into_inner)
             .len()
     }
+
+    /// Bytes durably available behind a session right now (M4(下)
+    /// §149: backend availability as opposed to browser buffering).
+    /// None for unknown/expired tokens.
+    pub async fn session_available_bytes(&self, token: &str) -> Option<u64> {
+        let entry = {
+            let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+            sessions.get(token).cloned()?
+        };
+        let resource = entry.resource.lock().await;
+        Some(resource.available_len())
+    }
 }
 
 impl Drop for StreamingGateway {
@@ -197,6 +235,7 @@ async fn serve(
     sessions: Arc<Mutex<HashMap<String, Arc<SessionEntry>>>>,
     read_timeout_ms: Arc<AtomicU64>,
 ) {
+    let started = Instant::now();
     let request = match read_request(&mut stream).await {
         Ok(request) => request,
         Err(_) => return,
@@ -205,6 +244,7 @@ async fn serve(
     let host_ok = request.host.as_deref().map(valid_host).unwrap_or(false);
     if !host_ok {
         let _ = write_simple(&mut stream, "403 Forbidden", &[]).await;
+        gateway_log("403", &request.path, None, started);
         return;
     }
     let Some(token) = request
@@ -214,6 +254,7 @@ async fn serve(
         .map(str::to_string)
     else {
         let _ = write_simple(&mut stream, "404 Not Found", &[]).await;
+        gateway_log("404", &request.path, None, started);
         return;
     };
 
@@ -232,10 +273,41 @@ async fn serve(
     };
     let Some(entry) = entry else {
         let _ = write_simple(&mut stream, "404 Not Found", &[]).await;
+        gateway_log("404", &request.path, None, started);
         return;
     };
+    if entry.is_closed() {
+        let _ = write_simple(&mut stream, "404 Not Found", &[]).await;
+        gateway_log("404", &request.path, None, started);
+        return;
+    }
 
+    // GET and HEAD only (M4(下) §125 "wrong HTTP method").
+    if request.method != "GET" && request.method != "HEAD" {
+        let _ = write_simple(
+            &mut stream,
+            "405 Method Not Allowed",
+            &[("Allow", "GET, HEAD".to_string())],
+        )
+        .await;
+        gateway_log("405", &request.path, Some(0), started);
+        return;
+    }
+
+    // Resource gone (task deleted, torrent removed, file missing) →
+    // controlled 503 BEFORE any headers are committed (§107).
     let resource = entry.resource.lock().await;
+    if !resource.is_available() {
+        let _ = write_simple(
+            &mut stream,
+            "503 Service Unavailable",
+            &[("Cache-Control", "no-store".to_string())],
+        )
+        .await;
+        gateway_log("503", &request.path, Some(0), started);
+        return;
+    }
+
     let total_len = resource.len();
 
     let resolution =
@@ -260,10 +332,12 @@ async fn serve(
                 &[("Content-Range", format!("bytes */{total_len}"))],
             )
             .await;
+            gateway_log("416", &request.path, Some(0), started);
             return;
         }
         RangeResolution::Invalid => {
             let _ = write_simple(&mut stream, "400 Bad Request", &[]).await;
+            gateway_log("400", &request.path, Some(0), started);
             return;
         }
     };
@@ -283,19 +357,42 @@ async fn serve(
     let mut sent: u64 = 0;
     if !head_only {
         let read_timeout = Duration::from_millis(read_timeout_ms.load(Ordering::Relaxed));
+        let mut closed_rx = entry.closed.subscribe();
         let mut offset = start;
         while offset < end {
+            // Session closed mid-response → stop serving immediately
+            // (§116/§137: the dead session must not keep reading).
+            if *closed_rx.borrow() {
+                break;
+            }
             let take = (end - offset).min(STREAM_CHUNK);
             let Ok(chunk_range) = ByteRange::new(offset, offset + take) else {
                 break;
             };
-            let demand = scheduler.submit(
+            let demand: DemandId = scheduler.submit(
                 &token,
                 chunk_range,
                 crate::core::streaming::demand::DemandReason::PlaybackBuffer,
                 None,
             );
-            match tokio::time::timeout(read_timeout, resource.read_range(chunk_range)).await {
+            let read =
+                tokio::time::timeout(read_timeout, resource.read_range(chunk_range));
+            tokio::pin!(read);
+            // Wait for the chunk OR the session-closed signal — a
+            // stopped session never waits out the full timeout.
+            let result = if *closed_rx.borrow() {
+                scheduler.cancel(demand);
+                break;
+            } else {
+                tokio::select! {
+                    _ = closed_rx.changed() => {
+                        scheduler.cancel(demand);
+                        break;
+                    }
+                    result = &mut read => result,
+                }
+            };
+            match result {
                 Ok(Ok(bytes)) => {
                     scheduler.complete(demand);
                     if stream.write_all(&bytes).await.is_err() {
@@ -313,7 +410,28 @@ async fn serve(
         }
     }
     let _ = stream.flush().await;
-    let _ = sent;
+    gateway_log("200", &request.path, Some(sent), started);
+}
+
+/// Low-cardinality, redacted request log (M4(下) §185): session short
+/// id + status + byte counts only — never the token, path, or URL.
+fn gateway_log(status: &str, path: &str, bytes: Option<u64>, started: Instant) {
+    let short = path
+        .split('/')
+        .next_back()
+        .unwrap_or("")
+        .chars()
+        .take(8)
+        .collect::<String>();
+    crate::diagnostics::info(
+        "gateway.request",
+        &[
+            ("session", &short),
+            ("status", status),
+            ("bytes", &bytes.map(|b| b.to_string()).unwrap_or_default()),
+            ("ms", &started.elapsed().as_millis().to_string()),
+        ],
+    );
 }
 
 async fn write_simple(
@@ -329,11 +447,11 @@ async fn write_simple(
     stream
         .write_all(response.as_bytes())
         .await
-        .map_err(|_| TideError::Internal("write failed".into()))?;
+        .map_err(|_| gateway_failure("write failed"))?;
     stream
         .flush()
         .await
-        .map_err(|_| TideError::Internal("flush failed".into()))
+        .map_err(|_| gateway_failure("flush failed"))
 }
 
 #[cfg(test)]

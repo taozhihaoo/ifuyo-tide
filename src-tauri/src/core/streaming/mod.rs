@@ -16,7 +16,7 @@ pub use demand::{Demand, DemandId, DemandPriority, DemandReason, DemandScheduler
 pub use gateway::StreamingGateway;
 pub use playback::{PlaybackManager, PlaybackSessionInfo};
 pub use range::{resolve_range_header, RangeResolution};
-pub use resource::{Availability, StreamingResource};
+pub use resource::{Availability, OriginSource, PlaybackCapability, StreamingResource};
 
 /// Response Content-Type from a file name. Labels only — the player
 /// capability matrix comes from the M0.5 facts (M4(上) §63); unknown

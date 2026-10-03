@@ -22,8 +22,61 @@ pub enum TideError {
     /// variant instead of a second error type.
     #[error(transparent)]
     Download(#[from] crate::core::download::DownloadFailure),
+    /// Streaming failures (M4(下) §98): playback, gateway, resource,
+    /// demand, scheduler, range, timeout — each a stable code, never a
+    /// raw internal string.
+    #[error(transparent)]
+    Streaming(#[from] StreamingFailure),
     #[error("{0}")]
     Internal(String),
+}
+
+/// Streaming-layer failure taxonomy (M4(下) §98/§143). Every variant
+/// maps to a stable code; messages stay human-safe.
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum StreamingFailure {
+    #[error("playback failed: {0}")]
+    Playback(String),
+    #[error("gateway request rejected: {0}")]
+    Gateway(String),
+    #[error("resource unavailable: {0}")]
+    Resource(String),
+    #[error("resource does not support range requests")]
+    RangeUnsupported,
+    #[error("demand rejected: {0}")]
+    Demand(String),
+    #[error("scheduler failure: {0}")]
+    Scheduler(String),
+    #[error("invalid range: {0}")]
+    Range(String),
+    #[error("network timeout while waiting for data")]
+    NetworkTimeout,
+    /// Connection-level failure (reset/refused/DNS) — one code, details
+    /// stay in logs.
+    #[error("connection to the source failed")]
+    NetworkConnect,
+    #[error("source returned HTTP {0}")]
+    HttpStatus(u16),
+    #[error("timed out waiting for data to become available")]
+    WaitTimeout,
+}
+
+impl StreamingFailure {
+    pub fn code(&self) -> &'static str {
+        match self {
+            StreamingFailure::Playback(_) => "PLAYBACK_ERROR",
+            StreamingFailure::Gateway(_) => "GATEWAY_ERROR",
+            StreamingFailure::Resource(_) => "RESOURCE_UNAVAILABLE",
+            StreamingFailure::RangeUnsupported => "RESOURCE_RANGE_UNSUPPORTED",
+            StreamingFailure::Demand(_) => "DEMAND_ERROR",
+            StreamingFailure::Scheduler(_) => "SCHEDULER_ERROR",
+            StreamingFailure::Range(_) => "RANGE_ERROR",
+            StreamingFailure::NetworkTimeout => "NETWORK_TIMEOUT",
+            StreamingFailure::NetworkConnect => "NETWORK_CONNECT",
+            StreamingFailure::HttpStatus(_) => "HTTP_STATUS",
+            StreamingFailure::WaitTimeout => "WAIT_TIMEOUT",
+        }
+    }
 }
 
 impl TideError {
@@ -36,6 +89,7 @@ impl TideError {
             TideError::StateTransition { .. } => "STATE_TRANSITION",
             TideError::Security(_) => "SECURITY",
             TideError::Download(failure) => failure.code(),
+            TideError::Streaming(failure) => failure.code(),
             TideError::Internal(_) => "INTERNAL",
         }
     }
@@ -102,6 +156,24 @@ mod tests {
             .code(),
             "STATE_TRANSITION"
         );
+        // M4(下) §98 streaming taxonomy codes are stable.
+        use StreamingFailure as S;
+        let cases: [(S, &str); 11] = [
+            (S::Playback("x".into()), "PLAYBACK_ERROR"),
+            (S::Gateway("x".into()), "GATEWAY_ERROR"),
+            (S::Resource("x".into()), "RESOURCE_UNAVAILABLE"),
+            (S::RangeUnsupported, "RESOURCE_RANGE_UNSUPPORTED"),
+            (S::Demand("x".into()), "DEMAND_ERROR"),
+            (S::Scheduler("x".into()), "SCHEDULER_ERROR"),
+            (S::Range("x".into()), "RANGE_ERROR"),
+            (S::NetworkTimeout, "NETWORK_TIMEOUT"),
+            (S::NetworkConnect, "NETWORK_CONNECT"),
+            (S::HttpStatus(503), "HTTP_STATUS"),
+            (S::WaitTimeout, "WAIT_TIMEOUT"),
+        ];
+        for (failure, code) in cases {
+            assert_eq!(TideError::Streaming(failure).code(), code);
+        }
     }
 
     #[test]

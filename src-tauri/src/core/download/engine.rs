@@ -42,6 +42,11 @@ pub struct DownloadShared {
     wake: Notify,
     transport: HttpTransport,
     repo: Arc<DownloadRepository>,
+    /// M4(下) §115: event-driven durable-length notification. Fired
+    /// AFTER a chunk is flushed to the `.part` so streaming readers
+    /// wake on real availability instead of polling (write → flush →
+    /// update availability → wake readers, §112).
+    durable_len_tx: tokio::sync::watch::Sender<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +65,7 @@ struct DownloadInner {
 
 impl DownloadShared {
     fn new(request: DownloadRequest, repo: Arc<DownloadRepository>) -> DownloadShared {
+        let (durable_len_tx, _) = tokio::sync::watch::channel(0u64);
         DownloadShared {
             request,
             inner: Mutex::new(DownloadInner {
@@ -79,6 +85,7 @@ impl DownloadShared {
             wake: Notify::new(),
             transport: HttpTransport::new().expect("static config"),
             repo,
+            durable_len_tx,
         }
     }
 
@@ -95,6 +102,7 @@ impl DownloadShared {
             record.etag.as_deref(),
             record.last_modified.as_deref(),
         );
+        let (durable_len_tx, _) = tokio::sync::watch::channel(record.downloaded_bytes);
         DownloadShared {
             request,
             inner: Mutex::new(DownloadInner {
@@ -118,7 +126,20 @@ impl DownloadShared {
             wake: Notify::new(),
             transport: HttpTransport::new().expect("static config"),
             repo,
+            durable_len_tx,
         }
+    }
+
+    /// Subscribes to durable-length changes of the `.part` (M4(下)
+    /// §115). The current value equals the flushed byte count.
+    pub fn subscribe_durable_len(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.durable_len_tx.subscribe()
+    }
+
+    /// Fires the durable-length notification (engine calls this after
+    /// every flushed chunk). A dropped receiver is not an error.
+    pub fn notify_durable_len(&self, len: u64) {
+        let _ = self.durable_len_tx.send(len);
     }
 
     /// Persisted checkpoint write (M2 §20-§23). Called AFTER bytes are in
@@ -355,6 +376,16 @@ impl DownloadEngine {
     }
 
     pub async fn get(&self, download_id: &str) -> Option<Arc<DownloadShared>> {
+        self.downloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(download_id)
+            .cloned()
+    }
+
+    /// Sync map lookup (the map is a plain mutex): used by the playback
+    /// resolver to grab the durable-len watch without an async hop.
+    pub fn get_sync(&self, download_id: &str) -> Option<Arc<DownloadShared>> {
         self.downloads
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -792,15 +823,19 @@ async fn run_download(
                     let _ = sink.bytes_written();
                     let chunk_len = bytes.len() as u64;
                     bytes_since_checkpoint += chunk_len;
-                    {
+                    let downloaded_now = {
                         let mut inner = shared.lock_inner();
                         inner.downloaded += chunk_len;
-                    }
+                        inner.downloaded
+                    };
+                    // M4(下) §112/§115: bytes are flushed (write_chunk
+                    // flushes per chunk) — only now may waiting readers
+                    // learn the new durable length.
+                    shared.notify_durable_len(downloaded_now);
                     speed.record(chunk_len, Instant::now());
                     // M2 §20/§48 checkpoint: time-or-byte threshold,
                     // whichever first (1 s / 1 MiB). Written AFTER the
                     // bytes are in the part file → DB ≤ durable file.
-                    let downloaded_now = shared.lock_inner().downloaded;
                     if last_checkpoint.elapsed() >= Duration::from_secs(1)
                         || bytes_since_checkpoint >= 1024 * 1024
                     {
