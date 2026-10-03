@@ -207,8 +207,8 @@ impl SpikeResource {
             SpikeResource::Torrent(r) => {
                 // Independent stream per read: concurrent range requests
                 // (head + moov) must not share a seeked stream.
-                let mut stream = Box::new(r.spike.open_stream(r.file_id).await?)
-                    as Box<dyn SpikeStream>;
+                let mut stream =
+                    Box::new(r.spike.open_stream(r.file_id).await?) as Box<dyn SpikeStream>;
                 stream
                     .seek(SeekFrom::Start(range.start()))
                     .await

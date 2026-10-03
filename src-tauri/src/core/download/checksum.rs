@@ -33,7 +33,9 @@ pub struct ChecksumWriter {
 
 impl ChecksumWriter {
     pub fn new() -> ChecksumWriter {
-        ChecksumWriter { hasher: Sha256::new() }
+        ChecksumWriter {
+            hasher: Sha256::new(),
+        }
     }
 
     pub fn update(&mut self, bytes: &[u8]) {
@@ -93,8 +95,14 @@ mod tests {
 
     #[test]
     fn algorithm_parse() {
-        assert_eq!(ChecksumAlgorithm::parse("sha256").unwrap(), ChecksumAlgorithm::Sha256);
-        assert_eq!(ChecksumAlgorithm::parse("SHA-256").unwrap(), ChecksumAlgorithm::Sha256);
+        assert_eq!(
+            ChecksumAlgorithm::parse("sha256").unwrap(),
+            ChecksumAlgorithm::Sha256
+        );
+        assert_eq!(
+            ChecksumAlgorithm::parse("SHA-256").unwrap(),
+            ChecksumAlgorithm::Sha256
+        );
         assert!(ChecksumAlgorithm::parse("md5").is_err());
         assert!(ChecksumAlgorithm::parse("").is_err());
     }

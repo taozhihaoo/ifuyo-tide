@@ -9,8 +9,8 @@
 
 pub mod checksum;
 pub mod engine;
-pub mod filename;
 pub mod file_sink;
+pub mod filename;
 pub mod http_range;
 pub mod progress;
 pub mod request;

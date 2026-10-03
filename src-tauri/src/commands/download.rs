@@ -22,10 +22,7 @@ pub struct DownloadStartedDto {
     pub download_id: String,
 }
 
-fn to_dto(
-    download_id: &str,
-    shared: &Arc<crate::core::download::DownloadShared>,
-) -> DownloadDto {
+fn to_dto(download_id: &str, shared: &Arc<crate::core::download::DownloadShared>) -> DownloadDto {
     let status = shared.status();
     DownloadDto {
         download_id: download_id.to_string(),
@@ -94,18 +91,16 @@ async fn start_impl(
     let destination_dir = match destination_dir {
         Some(dir) => std::path::PathBuf::from(dir),
         None => {
-            let dir = state
-                .with_conn(|conn| {
-                    state
-                        .settings_repository
-                        .get(conn, crate::persistence::repositories::KEY_DOWNLOAD_DIR)
-                })?;
-            dir.map(std::path::PathBuf::from)
-                .ok_or_else(|| {
-                    TideError::InvalidInput(
-                        "no download directory set — choose one in Settings first".into(),
-                    )
-                })?
+            let dir = state.with_conn(|conn| {
+                state
+                    .settings_repository
+                    .get(conn, crate::persistence::repositories::KEY_DOWNLOAD_DIR)
+            })?;
+            dir.map(std::path::PathBuf::from).ok_or_else(|| {
+                TideError::InvalidInput(
+                    "no download directory set — choose one in Settings first".into(),
+                )
+            })?
         }
     };
     if !destination_dir.is_absolute() {

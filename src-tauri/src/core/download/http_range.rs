@@ -4,7 +4,6 @@
 //! `spike/range.rs`); extended with `Content-Range` response parsing for
 //! resume verification. Semantics follow RFC 9110 §14.
 
-
 /// A parsed `Range` header value (RFC 9110), single-range scope.
 ///
 /// Multi-range headers are reported as [`RangeParse::Unsupported`]; the
@@ -26,7 +25,11 @@ pub enum RangeParse {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentRangeParse {
     /// `bytes <start>-<end>/<total>` — inclusive range, `*` total if unknown.
-    Valid { start: u64, end_inclusive: u64, total: Option<u64> },
+    Valid {
+        start: u64,
+        end_inclusive: u64,
+        total: Option<u64>,
+    },
     /// `bytes */<total>` — the server rejected the requested range but
     /// disclosed the current representation size (used with 416).
     Unsatisfiable { total: u64 },
@@ -154,8 +157,10 @@ pub fn parse_content_range_header(raw: Option<&str>) -> ContentRangeParse {
     let Some((start_str, end_str)) = range_part.split_once('-') else {
         return ContentRangeParse::Invalid;
     };
-    let (Ok(start), Ok(end_inclusive)) = (start_str.trim().parse::<u64>(), end_str.trim().parse::<u64>())
-    else {
+    let (Ok(start), Ok(end_inclusive)) = (
+        start_str.trim().parse::<u64>(),
+        end_str.trim().parse::<u64>(),
+    ) else {
         return ContentRangeParse::Invalid;
     };
     if end_inclusive < start {
@@ -226,7 +231,10 @@ mod tests {
     #[test]
     fn parses_closed_range() {
         assert_eq!(parse_range_header("bytes=0-1023"), single(0, Some(1023)));
-        assert_eq!(parse_range_header("bytes=1000-1999"), single(1000, Some(1999)));
+        assert_eq!(
+            parse_range_header("bytes=1000-1999"),
+            single(1000, Some(1999))
+        );
     }
 
     #[test]
@@ -274,7 +282,13 @@ mod tests {
         let parsed = parse_range_header("bytes=-18446744073709551615");
         assert!(matches!(parsed, RangeParse::Suffix(_)));
         let resolved = resolve_range(&parsed, 1000);
-        assert_eq!(resolved, Some(ResolvedRange { start: 0, end: 1000 }));
+        assert_eq!(
+            resolved,
+            Some(ResolvedRange {
+                start: 0,
+                end: 1000
+            })
+        );
     }
 
     #[test]
@@ -285,7 +299,13 @@ mod tests {
     #[test]
     fn resolves_closed_range_clamped_to_length() {
         let resolved = resolve_range(&parse_range_header("bytes=0-1023"), 5000).unwrap();
-        assert_eq!(resolved, ResolvedRange { start: 0, end: 1024 });
+        assert_eq!(
+            resolved,
+            ResolvedRange {
+                start: 0,
+                end: 1024
+            }
+        );
 
         let resolved = resolve_range(&parse_range_header("bytes=4000-99999"), 5000).unwrap();
         assert_eq!(resolved.end, 5000);
@@ -340,7 +360,7 @@ mod tests {
             Some("bytes 100-50/5000"),
             Some("bytes 100-/5000"),
             Some("items 0-5/10"),
-            Some("bytes 0-5/3"),   // total smaller than range end
+            Some("bytes 0-5/3"), // total smaller than range end
             Some("bytes 0-5"),
             Some(""),
             Some("bytes */abc"),
@@ -361,7 +381,10 @@ mod tests {
     #[test]
     fn range_resolution_outcomes() {
         assert_eq!(resolve_range_header(None, 100), RangeResolution::Full);
-        assert_eq!(resolve_range_header(Some("bytes=bad"), 100), RangeResolution::Invalid);
+        assert_eq!(
+            resolve_range_header(Some("bytes=bad"), 100),
+            RangeResolution::Invalid
+        );
         assert_eq!(
             resolve_range_header(Some("bytes=500-600"), 100),
             RangeResolution::NotSatisfiable

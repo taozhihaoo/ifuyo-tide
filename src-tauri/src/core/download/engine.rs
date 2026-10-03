@@ -13,12 +13,12 @@ use super::url::DownloadFailure;
 use super::validator::{decide_resume, ResponseValidators};
 use super::HttpTransport;
 use crate::error::TideError;
-use tauri::Emitter;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
+use tauri::Emitter;
 use tokio::sync::{Notify, Semaphore};
 
 /// Progress event throttle (M1 §27).
@@ -154,7 +154,10 @@ impl DownloadEngine {
         request: DownloadRequest,
         app: Option<tauri::AppHandle>,
     ) -> Result<Arc<DownloadShared>, TideError> {
-        let mut downloads = self.downloads.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut downloads = self
+            .downloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let shared = Arc::new(DownloadShared::new(request));
         let id = shared.request.download_id.clone();
         downloads.insert(id.clone(), shared.clone());
@@ -171,11 +174,20 @@ impl DownloadEngine {
     }
 
     pub async fn get(&self, download_id: &str) -> Option<Arc<DownloadShared>> {
-        self.downloads.lock().unwrap_or_else(PoisonError::into_inner).get(download_id).cloned()
+        self.downloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(download_id)
+            .cloned()
     }
 
     pub async fn list(&self) -> Vec<Arc<DownloadShared>> {
-        self.downloads.lock().unwrap_or_else(PoisonError::into_inner).values().cloned().collect()
+        self.downloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub async fn pause(&self, download_id: &str) -> Result<(), TideError> {
@@ -281,9 +293,10 @@ async fn run_download(
         let resume = decide_resume(downloaded);
         let (range_start, if_range) = match resume {
             super::validator::ResumeDecision::FullDownload => (None, None),
-            super::validator::ResumeDecision::TryResume { local_bytes } => {
-                (Some(local_bytes), validators.if_range_value().map(str::to_string))
-            }
+            super::validator::ResumeDecision::TryResume { local_bytes } => (
+                Some(local_bytes),
+                validators.if_range_value().map(str::to_string),
+            ),
         };
         crate::diagnostics::info(
             "download.connect",
@@ -345,10 +358,13 @@ async fn run_download(
                 }
             }
             206 => match parse_content_range_header(response.content_range.as_deref()) {
-                ContentRangeParse::Valid { start, total: cr_total, .. } => {
+                ContentRangeParse::Valid {
+                    start,
+                    total: cr_total,
+                    ..
+                } => {
                     if start != downloaded {
-                        let err =
-                            TideError::Download(DownloadFailure::InvalidContentRange);
+                        let err = TideError::Download(DownloadFailure::InvalidContentRange);
                         set_error(shared, &err);
                         return Err(err);
                     }
@@ -376,7 +392,16 @@ async fn run_download(
                         inner.total = Some(real_total);
                         inner.final_path = Some(final_path);
                     }
-                    emit_progress(shared, app.as_ref(), downloaded, Some(real_total), &mut speed, &mut last_emit, started, true);
+                    emit_progress(
+                        shared,
+                        app.as_ref(),
+                        downloaded,
+                        Some(real_total),
+                        &mut speed,
+                        &mut last_emit,
+                        started,
+                        true,
+                    );
                     return Ok(());
                 }
                 _ => {
@@ -447,7 +472,16 @@ async fn run_download(
                     }
                     speed.record(chunk_len, Instant::now());
                     let downloaded_now = shared.lock_inner().downloaded;
-                    emit_progress(shared, app.as_ref(), downloaded_now, total, &mut speed, &mut last_emit, started, false);
+                    emit_progress(
+                        shared,
+                        app.as_ref(),
+                        downloaded_now,
+                        total,
+                        &mut speed,
+                        &mut last_emit,
+                        started,
+                        false,
+                    );
                 }
                 Ok(None) => break BodyOutcome::Complete,
                 Err(err) => break BodyOutcome::Failed(err),
@@ -468,7 +502,13 @@ async fn run_download(
                                 ("total", &expected_total.to_string()),
                             ],
                         );
-                        match decide_retry(shared, &mut attempts, &TideError::Download(DownloadFailure::Network)).await {
+                        match decide_retry(
+                            shared,
+                            &mut attempts,
+                            &TideError::Download(DownloadFailure::Network),
+                        )
+                        .await
+                        {
                             Some(()) => continue,
                             None => {
                                 let err = TideError::Download(DownloadFailure::Network);
@@ -481,9 +521,8 @@ async fn run_download(
                 // Checksum (M1 §30): whole-file digest over the final part.
                 if let Some((_, expected_hex)) = &shared.request.expected_checksum {
                     let mut writer = ChecksumWriter::new();
-                    let mut file = std::fs::File::open(&part_path).map_err(|err| {
-                        classify_io_error(&err, "open part for checksum")
-                    })?;
+                    let mut file = std::fs::File::open(&part_path)
+                        .map_err(|err| classify_io_error(&err, "open part for checksum"))?;
                     use std::io::Read;
                     let mut buf = vec![0u8; 256 * 1024];
                     loop {
@@ -513,7 +552,16 @@ async fn run_download(
                     inner.downloaded = downloaded;
                     inner.final_path = Some(final_path);
                 }
-                emit_progress(shared, app.as_ref(), downloaded, total, &mut speed, &mut last_emit, started, true);
+                emit_progress(
+                    shared,
+                    app.as_ref(),
+                    downloaded,
+                    total,
+                    &mut speed,
+                    &mut last_emit,
+                    started,
+                    true,
+                );
                 crate::diagnostics::info(
                     "download.completed",
                     &[
@@ -523,7 +571,9 @@ async fn run_download(
                 );
                 return Ok(());
             }
-            BodyOutcome::Interrupted => return handle_interrupt(shared, app.as_ref(), &mut speed, started),
+            BodyOutcome::Interrupted => {
+                return handle_interrupt(shared, app.as_ref(), &mut speed, started)
+            }
             BodyOutcome::Failed(err) => {
                 if shared.is_cancelled() {
                     return handle_interrupt(shared, app.as_ref(), &mut speed, started);
@@ -533,7 +583,16 @@ async fn run_download(
                     inner.lifecycle = DownloadLifecycle::Paused;
                     drop(inner);
                     let downloaded = shared.lock_inner().downloaded;
-                    emit_progress(shared, app.as_ref(), downloaded, total, &mut speed, &mut last_emit, started, true);
+                    emit_progress(
+                        shared,
+                        app.as_ref(),
+                        downloaded,
+                        total,
+                        &mut speed,
+                        &mut last_emit,
+                        started,
+                        true,
+                    );
                     return Ok(());
                 }
                 match decide_retry(shared, &mut attempts, &err).await {
@@ -560,7 +619,12 @@ fn handle_interrupt(
         if let Some(part) = &status.part_path {
             FileSink::discard(part);
         }
-        shared.lock_inner().lifecycle = DownloadLifecycle::Cancelled;
+        {
+            let mut inner = shared.lock_inner();
+            inner.lifecycle = DownloadLifecycle::Cancelled;
+            inner.part_path = None;
+            inner.final_path = None;
+        }
         crate::diagnostics::info(
             "download.cancelled",
             &[("download_id", &shared.request.download_id)],
@@ -568,7 +632,19 @@ fn handle_interrupt(
         return Ok(());
     }
     shared.lock_inner().lifecycle = DownloadLifecycle::Paused;
-    emit_progress(shared, app, status.downloaded, status.total, speed, &mut None, started, true);
+    // Consume the pause flag: a stale flag would instantly re-pause the
+    // resumed task.
+    shared.take_pause();
+    emit_progress(
+        shared,
+        app,
+        status.downloaded,
+        status.total,
+        speed,
+        &mut None,
+        started,
+        true,
+    );
     Ok(())
 }
 
@@ -702,11 +778,9 @@ fn emit_progress(
         phase: status.phase.as_str().to_string(),
         filename: status.resolved_filename,
         progress,
-        error: status.error.map(|(code, message)| crate::dto::DownloadErrorDto {
-            code,
-            message,
-        }),
+        error: status
+            .error
+            .map(|(code, message)| crate::dto::DownloadErrorDto { code, message }),
     };
     let _ = app.emit("download://progress", &payload);
 }
-

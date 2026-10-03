@@ -48,8 +48,10 @@ impl DownloadRequest {
 
 /// Exponential backoff with full jitter, capped (M1 §19).
 pub fn retry_delay_ms(attempt: u32) -> u64 {
-    let base = RETRY_BASE_DELAY_MS
-        .saturating_mul(1u64.checked_shl(attempt.min(16)).unwrap_or(RETRY_MAX_DELAY_MS));
+    let base = RETRY_BASE_DELAY_MS.saturating_mul(
+        1u64.checked_shl(attempt.min(16))
+            .unwrap_or(RETRY_MAX_DELAY_MS),
+    );
     let capped = base.min(RETRY_MAX_DELAY_MS);
     // Full jitter within [base/2, capped]
     let jitter_source = crate::core::ids::new_id();
@@ -70,7 +72,10 @@ mod tests {
             assert!(d <= RETRY_MAX_DELAY_MS, "attempt {attempt} delay {d}");
             samples.push(d);
         }
-        assert!(samples.iter().any(|d| *d >= 1000), "later attempts reach larger delays");
+        assert!(
+            samples.iter().any(|d| *d >= 1000),
+            "later attempts reach larger delays"
+        );
     }
 
     #[test]

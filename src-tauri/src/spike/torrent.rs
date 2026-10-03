@@ -121,8 +121,7 @@ impl TorrentSpike {
         {
             Ok(result) => result,
             Err(_) => Err(TideError::Internal(
-                "torrent harness setup timed out after 120s (see spike.torrent.step logs)"
-                    .into(),
+                "torrent harness setup timed out after 120s (see spike.torrent.step logs)".into(),
             )),
         }
     }
@@ -143,8 +142,7 @@ impl TorrentSpike {
         {
             Ok(result) => result,
             Err(_) => Err(TideError::Internal(
-                "torrent harness setup timed out after 120s (see spike.torrent.step logs)"
-                    .into(),
+                "torrent harness setup timed out after 120s (see spike.torrent.step logs)".into(),
             )),
         }
     }
@@ -217,9 +215,7 @@ impl TorrentSpike {
         // hang the spike forever.
         tokio::time::timeout(Duration::from_secs(30), handle.wait_until_initialized())
             .await
-            .map_err(|_| {
-                TideError::Internal("torrent initialization timed out after 30s".into())
-            })?
+            .map_err(|_| TideError::Internal("torrent initialization timed out after 30s".into()))?
             .map_err(|err| TideError::Internal(format!("torrent metadata failed: {err}")))?;
         step("initialized");
 

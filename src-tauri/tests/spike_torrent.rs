@@ -48,7 +48,10 @@ async fn wait_for_progress(spike: &TorrentSpike, min_bytes: u64, timeout: Durati
             return status.progress_bytes;
         }
         if status.error.is_some() {
-            panic!("torrent error while waiting for progress: {:?}", status.error);
+            panic!(
+                "torrent error while waiting for progress: {:?}",
+                status.error
+            );
         }
         if started.elapsed() > timeout {
             panic!(
@@ -83,9 +86,8 @@ async fn torrent_loopback_downloads_and_supports_progressive_read() {
 
     // Experiment D: read the FIRST 512 KiB while the download is still
     // running — the read must wait for the pieces and return exact bytes.
-    let mut resource = SpikeResource::Torrent(
-        TorrentResource::new(spike.clone(), 0).expect("torrent resource"),
-    );
+    let mut resource =
+        SpikeResource::Torrent(TorrentResource::new(spike.clone(), 0).expect("torrent resource"));
     let head_range = ByteRange::new(0, 512 * 1024).unwrap();
     let read_started = Instant::now();
     let head = resource.read_range(head_range).await.expect("read head");
@@ -97,7 +99,12 @@ async fn torrent_loopback_downloads_and_supports_progressive_read() {
 
     // Download must CONTINUE after the read (not starved).
     let after_read = spike.status().progress_bytes;
-    let _ = wait_for_progress(&spike, (after_read + 1024 * 1024).min(payload_len), Duration::from_secs(120)).await;
+    let _ = wait_for_progress(
+        &spike,
+        (after_read + 1024 * 1024).min(payload_len),
+        Duration::from_secs(120),
+    )
+    .await;
 
     // Experiment E: seek (read a range in the MIDDLE and near the END)
     // without the whole file being downloaded first.
@@ -107,7 +114,11 @@ async fn torrent_loopback_downloads_and_supports_progressive_read() {
     let mid_wait = mid_started.elapsed();
     assert_eq!(mid.len(), 256 * 1024);
     for (i, b) in mid.iter().enumerate() {
-        assert_eq!(*b, ((payload_len / 2 + i as u64) % 253) as u8, "mid byte {i}");
+        assert_eq!(
+            *b,
+            ((payload_len / 2 + i as u64) % 253) as u8,
+            "mid byte {i}"
+        );
     }
 
     // Wait for completion and verify the end of the file.
@@ -116,7 +127,11 @@ async fn torrent_loopback_downloads_and_supports_progressive_read() {
     let tail = resource.read_range(tail_range).await.expect("read tail");
     assert_eq!(tail.len(), 4096);
     for (i, b) in tail.iter().enumerate() {
-        assert_eq!(*b, ((payload_len - 4096 + i as u64) % 253) as u8, "tail byte {i}");
+        assert_eq!(
+            *b,
+            ((payload_len - 4096 + i as u64) % 253) as u8,
+            "tail byte {i}"
+        );
     }
 
     eprintln!(
@@ -136,7 +151,11 @@ async fn multi_file_torrent_lists_all_files_and_reads_selected_file() {
     // one file.
     let seed_dir = temp_dir("multi-seed");
     make_payload(&seed_dir, "video.mp4", 4 * 1024 * 1024);
-    std::fs::write(seed_dir.join("subtitle.srt"), b"1\n00:00:01,000 --> 00:00:02,000\nhi\n").unwrap();
+    std::fs::write(
+        seed_dir.join("subtitle.srt"),
+        b"1\n00:00:01,000 --> 00:00:02,000\nhi\n",
+    )
+    .unwrap();
     std::fs::write(seed_dir.join("cover.jpg"), b"\xff\xd8fakejpg").unwrap();
     std::fs::write(seed_dir.join("other.bin"), vec![7u8; 1024 * 1024]).unwrap();
 
@@ -167,7 +186,10 @@ async fn multi_file_torrent_lists_all_files_and_reads_selected_file() {
     let range = ByteRange::new(0, 4096).unwrap();
     let bytes = resource.read_range(range).await.expect("read bin head");
     assert_eq!(bytes.len(), 4096);
-    assert!(bytes.iter().all(|b| *b == 7), "bytes must come from other.bin");
+    assert!(
+        bytes.iter().all(|b| *b == 7),
+        "bytes must come from other.bin"
+    );
 
     // File ids are bounds-checked (no arbitrary access).
     assert!(TorrentResource::new(spike.clone(), 99).is_err());

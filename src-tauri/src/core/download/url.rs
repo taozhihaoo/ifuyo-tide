@@ -73,10 +73,7 @@ fn host_is_private_literal(host: &str) -> Option<bool> {
 /// NOT done in M1 (documented limitation; reqwest performs resolution
 /// at request time). Redirect-time re-validation happens in the
 /// transport's redirect policy.
-pub fn validate_download_url(
-    raw: &str,
-    allow_private: bool,
-) -> Result<ValidatedUrl, TideError> {
+pub fn validate_download_url(raw: &str, allow_private: bool) -> Result<ValidatedUrl, TideError> {
     let raw = raw.trim();
     if raw.is_empty() {
         return Err(TideError::Download(DownloadFailure::InvalidUrl {
@@ -111,9 +108,9 @@ pub fn validate_download_url(
     let literal_private = host_is_private_literal(&host);
     if let Some(true) = literal_private {
         if !allow_private {
-            return Err(TideError::Download(DownloadFailure::PrivateAddressBlocked {
-                host,
-            }));
+            return Err(TideError::Download(
+                DownloadFailure::PrivateAddressBlocked { host },
+            ));
         }
     }
     // Hostnames that are NOT literal IPs are allowed in M1 without DNS

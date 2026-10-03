@@ -48,9 +48,8 @@ impl TransportResponse {
     }
 }
 
-type BodyStream = std::pin::Pin<
-    Box<dyn futures_util::Stream<Item = reqwest::Result<Bytes>> + Send>,
->;
+type BodyStream =
+    std::pin::Pin<Box<dyn futures_util::Stream<Item = reqwest::Result<Bytes>> + Send>>;
 
 pub fn map_reqwest_error(err: &reqwest::Error) -> TideError {
     let failure = if err.is_timeout() {
@@ -114,9 +113,7 @@ impl HttpTransport {
             // explicit header documents the expectation server-side.
             .user_agent(concat!("ifuyo-tide/", env!("CARGO_PKG_VERSION")))
             .build()
-            .map_err(|err| {
-                TideError::Internal(format!("failed to build HTTP client: {err}"))
-            })?;
+            .map_err(|err| TideError::Internal(format!("failed to build HTTP client: {err}")))?;
         Ok(HttpTransport { client })
     }
 
@@ -147,15 +144,11 @@ impl HttpTransport {
         let response = request.send().await.map_err(|err| {
             // Redirect rejections surface here as reqwest errors.
             if err.is_redirect() {
-                return TideError::Download(
-                    super::url::DownloadFailure::RedirectLimitExceeded,
-                );
+                return TideError::Download(super::url::DownloadFailure::RedirectLimitExceeded);
             }
             if err.is_connect() {
                 // A redirect may have hopped to a blocked host.
-                return TideError::Download(
-                    super::url::DownloadFailure::Network,
-                );
+                return TideError::Download(super::url::DownloadFailure::Network);
             }
             map_reqwest_error(&err)
         })?;
@@ -202,14 +195,12 @@ impl HttpTransport {
     /// to GET-derived metadata (M1 §32).
     pub async fn head(&self, url: &ValidatedUrl) -> Result<Option<u64>, TideError> {
         let response = self.client.head(url.inner.clone()).send().await;
-        Ok(response
-            .ok()
-            .and_then(|r| {
-                r.headers()
-                    .get(reqwest::header::CONTENT_LENGTH)
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok())
-            }))
+        Ok(response.ok().and_then(|r| {
+            r.headers()
+                .get(reqwest::header::CONTENT_LENGTH)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+        }))
     }
 }
 

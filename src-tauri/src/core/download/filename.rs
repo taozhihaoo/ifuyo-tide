@@ -262,10 +262,7 @@ mod tests {
     #[test]
     fn url_segment_extraction_and_decoding() {
         let url: url::Url = "http://example.com/path/to/My%20File.zip".parse().unwrap();
-        assert_eq!(
-            resolve_filename(None, None, &url).unwrap(),
-            "My File.zip"
-        );
+        assert_eq!(resolve_filename(None, None, &url).unwrap(), "My File.zip");
         let url: url::Url = "http://example.com/".parse().unwrap();
         assert_eq!(resolve_filename(None, None, &url).unwrap(), "download.bin");
     }

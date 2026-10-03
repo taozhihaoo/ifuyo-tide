@@ -111,11 +111,17 @@ mod tests {
         // Second sample: 1 MB in 100 ms → instant 10 MB/s.
         tracker.record(1_000_000, t0 + Duration::from_millis(100));
         let first = tracker.smoothed_bps();
-        assert!(first > 1_000_000.0, "EMA should rise toward 10MB/s: {first}");
+        assert!(
+            first > 1_000_000.0,
+            "EMA should rise toward 10MB/s: {first}"
+        );
         // Several slow samples pull the EMA down gradually (no single-chunk
         // jumps).
         for i in 1..=10 {
-            tracker.record(10_000, t0 + Duration::from_millis(100) + Duration::from_millis(1000 * i));
+            tracker.record(
+                10_000,
+                t0 + Duration::from_millis(100) + Duration::from_millis(1000 * i),
+            );
         }
         let later = tracker.smoothed_bps();
         assert!(later < first, "EMA must decay smoothly: {later} < {first}");

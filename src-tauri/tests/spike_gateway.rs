@@ -45,20 +45,14 @@ struct RawResponse {
     body: Vec<u8>,
 }
 
-async fn http_request(
-    port: u16,
-    target: &str,
-    host: &str,
-    method: &str,
-) -> RawResponse {
+async fn http_request(port: u16, target: &str, host: &str, method: &str) -> RawResponse {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .expect("connect");
     use tokio::io::AsyncReadExt;
     use tokio::io::AsyncWriteExt;
-    let request = format!(
-        "{method} {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
-    );
+    let request =
+        format!("{method} {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await.expect("write");
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw).await.expect("read");
@@ -76,12 +70,9 @@ async fn http_request_with_range(
         .expect("connect");
     use tokio::io::AsyncReadExt;
     use tokio::io::AsyncWriteExt;
-    let range_line = range
-        .map(|r| format!("Range: {r}\r\n"))
-        .unwrap_or_default();
-    let request = format!(
-        "GET {target} HTTP/1.1\r\nHost: {host}\r\n{range_line}Connection: close\r\n\r\n"
-    );
+    let range_line = range.map(|r| format!("Range: {r}\r\n")).unwrap_or_default();
+    let request =
+        format!("GET {target} HTTP/1.1\r\nHost: {host}\r\n{range_line}Connection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await.expect("write");
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw).await.expect("read");
@@ -127,35 +118,81 @@ async fn setup_gateway(file: &std::path::Path) -> (Gateway, String) {
 async fn gateway_serves_full_file_with_200() {
     let file = make_temp_file("full");
     let (gateway, token) = setup_gateway(&file).await;
-    let response = http_request(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", "GET").await;
+    let response = http_request(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "127.0.0.1:9",
+        "GET",
+    )
+    .await;
     assert_eq!(response.status, 200);
     assert_eq!(response.body.len() as u64, LEN);
     assert_eq!(response.body[0], pattern_byte(0));
     assert_eq!(response.body[LEN as usize - 1], pattern_byte(LEN - 1));
-    assert_eq!(response.headers.iter().find(|(n, _)| n == "accept-ranges").map(|(_, v)| v.as_str()), Some("bytes"));
-    assert_eq!(response.headers.iter().find(|(n, _)| n == "content-length").map(|(_, v)| v.as_str()), Some(LEN.to_string().as_str()));
+    assert_eq!(
+        response
+            .headers
+            .iter()
+            .find(|(n, _)| n == "accept-ranges")
+            .map(|(_, v)| v.as_str()),
+        Some("bytes")
+    );
+    assert_eq!(
+        response
+            .headers
+            .iter()
+            .find(|(n, _)| n == "content-length")
+            .map(|(_, v)| v.as_str()),
+        Some(LEN.to_string().as_str())
+    );
 }
 
 #[tokio::test]
 async fn gateway_serves_closed_range_206() {
     let file = make_temp_file("closed-range");
     let (gateway, token) = setup_gateway(&file).await;
-    let response = http_request_with_range(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", Some("bytes=1000-1999")).await;
+    let response = http_request_with_range(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "127.0.0.1:9",
+        Some("bytes=1000-1999"),
+    )
+    .await;
     assert_eq!(response.status, 206);
     assert_eq!(response.body.len(), 1000);
     for (i, b) in response.body.iter().enumerate() {
         assert_eq!(*b, pattern_byte(1000 + i as u64));
     }
-    let content_range = response.headers.iter().find(|(n, _)| n == "content-range").map(|(_, v)| v.clone());
-    assert_eq!(content_range.as_deref(), Some(&*format!("bytes 1000-1999/{LEN}")));
-    assert_eq!(response.headers.iter().find(|(n, _)| n == "content-length").map(|(_, v)| v.as_str()), Some("1000"));
+    let content_range = response
+        .headers
+        .iter()
+        .find(|(n, _)| n == "content-range")
+        .map(|(_, v)| v.clone());
+    assert_eq!(
+        content_range.as_deref(),
+        Some(&*format!("bytes 1000-1999/{LEN}"))
+    );
+    assert_eq!(
+        response
+            .headers
+            .iter()
+            .find(|(n, _)| n == "content-length")
+            .map(|(_, v)| v.as_str()),
+        Some("1000")
+    );
 }
 
 #[tokio::test]
 async fn gateway_serves_suffix_range_from_eof() {
     let file = make_temp_file("suffix");
     let (gateway, token) = setup_gateway(&file).await;
-    let response = http_request_with_range(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", Some("bytes=-512")).await;
+    let response = http_request_with_range(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "127.0.0.1:9",
+        Some("bytes=-512"),
+    )
+    .await;
     assert_eq!(response.status, 206);
     assert_eq!(response.body.len(), 512);
     for (i, b) in response.body.iter().enumerate() {
@@ -168,10 +205,20 @@ async fn gateway_416_on_out_of_bounds() {
     let file = make_temp_file("oob");
     let (gateway, token) = setup_gateway(&file).await;
     // start far beyond the 1 MiB file
-    let response = http_request_with_range(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", Some("bytes=9999999-10000000")).await;
+    let response = http_request_with_range(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "127.0.0.1:9",
+        Some("bytes=9999999-10000000"),
+    )
+    .await;
     assert_eq!(response.status, 416);
     assert_eq!(
-        response.headers.iter().find(|(n, _)| n == "content-range").map(|(_, v)| v.clone()),
+        response
+            .headers
+            .iter()
+            .find(|(n, _)| n == "content-range")
+            .map(|(_, v)| v.clone()),
         Some(format!("bytes */{LEN}"))
     );
 }
@@ -180,7 +227,13 @@ async fn gateway_416_on_out_of_bounds() {
 async fn gateway_400_on_reversed_range() {
     let file = make_temp_file("reversed");
     let (gateway, token) = setup_gateway(&file).await;
-    let response = http_request_with_range(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", Some("bytes=500-400")).await;
+    let response = http_request_with_range(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "127.0.0.1:9",
+        Some("bytes=500-400"),
+    )
+    .await;
     assert_eq!(response.status, 400);
 }
 
@@ -188,7 +241,13 @@ async fn gateway_400_on_reversed_range() {
 async fn gateway_multi_range_gets_full_body() {
     let file = make_temp_file("multi");
     let (gateway, token) = setup_gateway(&file).await;
-    let response = http_request_with_range(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", Some("bytes=0-1,5-9")).await;
+    let response = http_request_with_range(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "127.0.0.1:9",
+        Some("bytes=0-1,5-9"),
+    )
+    .await;
     assert_eq!(response.status, 200);
     assert_eq!(response.body.len() as u64, LEN);
 }
@@ -200,7 +259,13 @@ async fn gateway_rejects_unknown_token_and_paths() {
 
     // random unguessable token → 404
     let random = ifuyo_tide_lib::core::ids::new_id();
-    let response = http_request(gateway.port, &format!("/stream/{random}"), "127.0.0.1:9", "GET").await;
+    let response = http_request(
+        gateway.port,
+        &format!("/stream/{random}"),
+        "127.0.0.1:9",
+        "GET",
+    )
+    .await;
     assert_eq!(response.status, 404);
 
     // path-style access attempts → 404 (never a file error)
@@ -222,10 +287,20 @@ async fn gateway_expires_sessions() {
     let gateway = Gateway::start().await.expect("gateway start");
     let resource = SpikeResource::File(FileResource::open(file.to_path_buf()).expect("file"));
     let token = gateway
-        .create_session(resource, "short-lived".to_string(), Some(Duration::from_millis(50)))
+        .create_session(
+            resource,
+            "short-lived".to_string(),
+            Some(Duration::from_millis(50)),
+        )
         .expect("session");
     tokio::time::sleep(Duration::from_millis(120)).await;
-    let response = http_request(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", "GET").await;
+    let response = http_request(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "127.0.0.1:9",
+        "GET",
+    )
+    .await;
     assert_eq!(response.status, 404, "expired session must be rejected");
 }
 
@@ -234,7 +309,13 @@ async fn gateway_revoked_session_is_rejected() {
     let file = make_temp_file("revoke");
     let (gateway, token) = setup_gateway(&file).await;
     assert!(gateway.remove_session(&token));
-    let response = http_request(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", "GET").await;
+    let response = http_request(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "127.0.0.1:9",
+        "GET",
+    )
+    .await;
     assert_eq!(response.status, 404);
 }
 
@@ -242,7 +323,13 @@ async fn gateway_revoked_session_is_rejected() {
 async fn gateway_rejects_bad_host() {
     let file = make_temp_file("host");
     let (gateway, token) = setup_gateway(&file).await;
-    let response = http_request(gateway.port, &format!("/stream/{token}"), "evil.example.com", "GET").await;
+    let response = http_request(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "evil.example.com",
+        "GET",
+    )
+    .await;
     assert_eq!(response.status, 403);
 }
 
@@ -250,11 +337,21 @@ async fn gateway_rejects_bad_host() {
 async fn gateway_head_has_headers_but_no_body() {
     let file = make_temp_file("head");
     let (gateway, token) = setup_gateway(&file).await;
-    let response = http_request(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", "HEAD").await;
+    let response = http_request(
+        gateway.port,
+        &format!("/stream/{token}"),
+        "127.0.0.1:9",
+        "HEAD",
+    )
+    .await;
     assert_eq!(response.status, 200);
     assert!(response.body.is_empty());
     assert_eq!(
-        response.headers.iter().find(|(n, _)| n == "content-length").map(|(_, v)| v.as_str()),
+        response
+            .headers
+            .iter()
+            .find(|(n, _)| n == "content-length")
+            .map(|(_, v)| v.as_str()),
         Some(LEN.to_string().as_str())
     );
 }

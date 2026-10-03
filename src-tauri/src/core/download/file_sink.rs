@@ -78,7 +78,9 @@ impl FileSink {
         // tricked only if `filename` contained separators — callers pass
         // sanitized names; assert containment regardless (M1 §9).
         if !candidate.starts_with(&dir_canonical) {
-            return Err(TideError::Security("destination escapes download dir".into()));
+            return Err(TideError::Security(
+                "destination escapes download dir".into(),
+            ));
         }
         let final_path = match policy {
             OverwritePolicy::Fail => {
@@ -104,8 +106,7 @@ impl FileSink {
                         .and_then(|e| e.to_str())
                         .map(|e| format!(".{e}"))
                         .unwrap_or_default();
-                    candidate =
-                        dir_canonical.join(format!("{stem} ({counter}){ext}"));
+                    candidate = dir_canonical.join(format!("{stem} ({counter}){ext}"));
                     counter += 1;
                 }
                 candidate
@@ -191,9 +192,13 @@ impl FileSink {
     }
 
     /// Reads back `len` bytes at `offset` (used by resume verification).
-    pub fn read_part_range(part_path: &Path, offset: u64, len: usize) -> Result<Vec<u8>, TideError> {
-        let mut file = File::open(part_path)
-            .map_err(|err| classify_io_error(&err, "open part for read"))?;
+    pub fn read_part_range(
+        part_path: &Path,
+        offset: u64,
+        len: usize,
+    ) -> Result<Vec<u8>, TideError> {
+        let mut file =
+            File::open(part_path).map_err(|err| classify_io_error(&err, "open part for read"))?;
         file.seek(SeekFrom::Start(offset))
             .map_err(|err| classify_io_error(&err, "seek part for read"))?;
         let mut buf = vec![0u8; len];
@@ -212,9 +217,8 @@ impl FileSink {
         file.sync_all()
             .map_err(|err| classify_io_error(&err, "sync part"))?;
         drop(file);
-        std::fs::rename(&self.part_path, &self.final_path).map_err(|err| {
-            classify_io_error(&err, "atomic rename")
-        })?;
+        std::fs::rename(&self.part_path, &self.final_path)
+            .map_err(|err| classify_io_error(&err, "atomic rename"))?;
         Ok(self.final_path)
     }
 
@@ -305,8 +309,7 @@ mod tests {
         let (part, final_path) = FileSink::plan(&dir, "c.bin", OverwritePolicy::Fail).unwrap();
         let mut checksum = ChecksumWriter::new();
         checksum.update(b"verified");
-        let mut sink =
-            FileSink::open(part, final_path, 8, Some(checksum)).unwrap();
+        let mut sink = FileSink::open(part, final_path, 8, Some(checksum)).unwrap();
         sink.write_chunk(b"tail").unwrap();
         // sha256("verifiedtail")
         let digest = sink.checksum.unwrap().finalize_hex();
