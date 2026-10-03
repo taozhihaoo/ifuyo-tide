@@ -45,9 +45,16 @@ impl ByteRange {
 
     /// Whether this range shares at least one byte with `other`.
     ///
-    /// Adjacent ranges (`[0, 100)` and `[100, 200)`) do not overlap.
+    /// Adjacent ranges (`[0, 100)` and `[100, 200)`) do not overlap, and
+    /// an empty range never overlaps anything.
     pub const fn overlaps(&self, other: &ByteRange) -> bool {
-        self.start < other.end && other.start < self.end
+        let lo = if self.start > other.start {
+            self.start
+        } else {
+            other.start
+        };
+        let hi = if self.end < other.end { self.end } else { other.end };
+        lo < hi
     }
 }
 
