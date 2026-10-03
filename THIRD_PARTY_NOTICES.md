@@ -17,6 +17,9 @@ hardening (M10/M11) and shipped with installers.
 | serde / serde_json (Rust) | 1.x | Apache-2.0 OR MIT | crates.io | Serialization |
 | **librqbit (Rust)** | **9.0.1** | **Apache-2.0** | crates.io | BitTorrent engine (validated in M0.5) |
 | tokio (Rust) | 1.x | MIT | crates.io | Async runtime |
+| reqwest (Rust) | 0.13.5 | Apache-2.0 OR MIT | crates.io | HTTP client (M1; rustls TLS, no auto-decompression) |
+| sha2 (Rust) | 0.11 | Apache-2.0 OR MIT | crates.io | SHA-256 checksums |
+| url (Rust) | 2.x | Apache-2.0 OR MIT | crates.io | URL parsing |
 | @tauri-apps/api (npm) | 2.x | Apache-2.0 OR MIT | npm | Frontend IPC |
 | @tauri-apps/plugin-dialog (npm) | 2.x | Apache-2.0 OR MIT | npm | Picker JS API |
 | @tauri-apps/cli (npm) | 2.x | Apache-2.0 OR MIT | npm | Dev/build tooling |
