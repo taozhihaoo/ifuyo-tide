@@ -5,6 +5,7 @@ import { PlayerView } from "../features/player/PlayerView";
 import { SettingsView } from "../features/settings/SettingsView";
 import { SpikeView } from "../features/spike/SpikeView";
 import { DownloadsView } from "../features/tasks/DownloadsView";
+import { TorrentsView } from "../features/torrents/TorrentsView";
 import { spikeAutorunEnabled } from "../lib/spikeApi";
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
 
         <main className="content">
           {view === "downloads" && <DownloadsView />}
+          {view === "torrents" && <TorrentsView />}
           {view === "library" && <LibraryView />}
           {view === "player" && <PlayerView />}
           {view === "settings" && <SettingsView />}

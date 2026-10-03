@@ -39,7 +39,7 @@ pub fn sanitize_filename(raw: &str) -> String {
         name = name[2..].to_string();
     }
     if name.contains(':') {
-        name = name.split(':').last().unwrap_or_default().to_string();
+        name = name.split(':').next_back().unwrap_or_default().to_string();
     }
 
     // Illegal Windows name characters (also blocks control chars).
@@ -97,7 +97,7 @@ pub fn filename_from_content_disposition(header: &str) -> Option<String> {
             let charset = segments.next().unwrap_or("utf-8");
             let encoded = segments
                 .next()
-                .and_then(|rest| rest.splitn(2, '\'').nth(1))
+                .and_then(|rest| rest.split_once('\'').map(|x| x.1))
                 .unwrap_or(value);
             if !charset.eq_ignore_ascii_case("utf-8") && !charset.eq_ignore_ascii_case("iso-8859-1")
             {

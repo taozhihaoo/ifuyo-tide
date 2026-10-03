@@ -183,7 +183,7 @@ impl SpikeResource {
     /// backed by an incomplete torrent. Bounded by MAX_READ_BYTES and a
     /// per-implementation timeout.
     pub async fn read_range(&mut self, range: ByteRange) -> Result<Vec<u8>, TideError> {
-        if range.length() as u64 > MAX_READ_BYTES {
+        if range.length() > MAX_READ_BYTES {
             return Err(TideError::InvalidInput(format!(
                 "read of {} bytes exceeds the {} byte spike cap",
                 range.length(),

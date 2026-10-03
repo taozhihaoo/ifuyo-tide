@@ -44,7 +44,7 @@ fn create_persist_reload_delete_roundtrip() {
 
     // First "app run": create source + task.
     {
-        let mut conn = open(&db_path).expect("open db");
+        let conn = open(&db_path).expect("open db");
         let (source, task) = make_source_and_task();
         source_repo.insert(&conn, &source).unwrap();
         repo.insert(&conn, &task).unwrap();

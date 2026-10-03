@@ -51,7 +51,40 @@ pub fn run() {
         Err(err) => fatal_startup("startup recovery failed", &err),
     }
 
-    let app_state = AppState::new(conn, download_engine);
+    // M3: torrent engine (single librqbit Session, M3 §34) + repository.
+    let torrent_metadata_dir = dirs.metadata_dir;
+    let torrent_config = crate::core::torrent::TorrentEngineConfig {
+        metadata_dir: torrent_metadata_dir,
+        dht: true,
+        listen_loopback_only: false,
+        initial_peers: None,
+    };
+    let torrent_engine = match tauri::async_runtime::block_on(
+        crate::core::torrent::TorrentEngine::new(&torrent_config),
+    ) {
+        Ok(engine) => engine,
+        Err(err) => fatal_startup("failed to initialize torrent engine", &err),
+    };
+    let torrent_repository =
+        match crate::persistence::repositories::TorrentRepository::open(&dirs.database_file) {
+            Ok(repo) => std::sync::Arc::new(repo),
+            Err(err) => fatal_startup("failed to open torrent repository", &err),
+        };
+    // M3 torrent recovery (M3 §15): re-add persisted torrent tasks to
+    // the session PAUSED; the user resumes explicitly.
+    match tauri::async_runtime::block_on(crate::core::torrent::recover_torrents(
+        &torrent_repository,
+        &torrent_engine,
+    )) {
+        Ok(outcomes) => {
+            diagnostics::info(
+                "torrent_recovery_scan",
+                &[("tasks", &outcomes.len().to_string())],
+            );
+        }
+        Err(err) => fatal_startup("torrent recovery failed", &err),
+    }
+    let app_state = AppState::new(conn, download_engine, torrent_engine, torrent_repository);
 
     // M0.5 SPIKE: separate managed state for experiment infrastructure.
     let spike_state = crate::spike::state::SpikeState::default();
@@ -79,6 +112,24 @@ pub fn run() {
             // M2 persistence commands
             commands::download::retry_download,
             commands::download::delete_download,
+            // M3 torrent commands
+            commands::torrent::inspect_torrent_source,
+            commands::torrent::create_torrent_task,
+            commands::torrent::list_torrents,
+            commands::torrent::set_torrent_file_selection,
+            commands::torrent::pause_torrent,
+            commands::torrent::resume_torrent,
+            commands::torrent::remove_torrent,
+            commands::torrent::delete_torrent_data,
+            // M3 torrent commands
+            commands::torrent::inspect_torrent_source,
+            commands::torrent::create_torrent_task,
+            commands::torrent::list_torrents,
+            commands::torrent::set_torrent_file_selection,
+            commands::torrent::pause_torrent,
+            commands::torrent::resume_torrent,
+            commands::torrent::remove_torrent,
+            commands::torrent::delete_torrent_data,
             // M0.5 SPIKE commands
             commands::spike::spike_status,
             commands::spike::spike_list_media,

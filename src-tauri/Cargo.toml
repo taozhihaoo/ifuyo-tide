@@ -19,7 +19,7 @@ serde_json = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
-librqbit = "9.0.1"
+librqbit = { version = "9.0.1", features = ["disable-upload"] }
 # M0.5 SPIKE: async runtime for the local experiments
 # (fixture HTTP server, gateway, FileStream reads).
 tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "time", "macros", "fs"] }

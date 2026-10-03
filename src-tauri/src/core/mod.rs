@@ -8,3 +8,4 @@ pub mod scheduler;
 pub mod source;
 pub mod task;
 pub mod time;
+pub mod torrent;

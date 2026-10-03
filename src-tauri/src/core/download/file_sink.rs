@@ -187,7 +187,7 @@ impl FileSink {
         let file = self
             .file
             .as_mut()
-            .ok_or_else(|| TideError::Download(DownloadFailure::FileWrite))?;
+            .ok_or(TideError::Download(DownloadFailure::FileWrite))?;
         file.write_all(chunk)
             .and_then(|_| file.flush())
             .map_err(|err| classify_io_error(&err, "write chunk"))?;
@@ -220,7 +220,7 @@ impl FileSink {
         let file = self
             .file
             .take()
-            .ok_or_else(|| TideError::Download(DownloadFailure::FileWrite))?;
+            .ok_or(TideError::Download(DownloadFailure::FileWrite))?;
         file.sync_all()
             .map_err(|err| classify_io_error(&err, "sync part"))?;
         drop(file);

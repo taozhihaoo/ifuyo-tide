@@ -333,7 +333,7 @@ async fn db_ahead_of_file_never_resumes_past_data() {
     let request = make_request(&server, "/slow/medium.bin", &work, len);
     let shared = engine.start(request, None).await.unwrap();
     let id = shared.request.download_id.clone();
-    let before = pause_and_wait(&engine, &id).await;
+    let _before = pause_and_wait(&engine, &id).await;
     drop(engine);
     drop(repo.clone());
 

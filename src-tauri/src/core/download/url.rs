@@ -168,6 +168,8 @@ pub enum DownloadFailure {
     InvalidContentRange,
     #[error("destination already exists: {path}")]
     DestinationExists { path: String },
+    #[error("invalid torrent path: {path}")]
+    InvalidTorrentPath { path: String },
     #[error("insufficient disk space (need {required_bytes} bytes)")]
     InsufficientDiskSpace { required_bytes: u64 },
 }
@@ -192,6 +194,7 @@ impl DownloadFailure {
             DownloadFailure::ChecksumMismatch => "DOWNLOAD_CHECKSUM_MISMATCH",
             DownloadFailure::InvalidContentRange => "DOWNLOAD_INVALID_CONTENT_RANGE",
             DownloadFailure::DestinationExists { .. } => "DOWNLOAD_DESTINATION_EXISTS",
+            DownloadFailure::InvalidTorrentPath { .. } => "DOWNLOAD_INVALID_TORRENT_PATH",
             DownloadFailure::InsufficientDiskSpace { .. } => "DOWNLOAD_DISK_SPACE",
         }
     }

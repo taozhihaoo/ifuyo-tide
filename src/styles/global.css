@@ -467,3 +467,21 @@ button:focus-visible {
   margin: 6px 0;
   accent-color: var(--accent);
 }
+
+.torrent-files {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text-dim);
+  max-height: 200px;
+  overflow-y: auto;
+  user-select: text;
+}
+
+.torrent-files .file-index {
+  color: var(--accent);
+  margin-right: 6px;
+}

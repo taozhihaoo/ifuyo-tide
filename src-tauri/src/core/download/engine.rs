@@ -641,9 +641,8 @@ async fn run_download(
                 _ = wait => return handle_interrupt(shared, app.as_ref(), &mut speed, started),
             }
         }
-        .map_err(|err| {
-            set_error(shared, &err);
-            err
+        .inspect_err(|err| {
+            set_error(shared, err);
         })?;
 
         // ---- headers ----

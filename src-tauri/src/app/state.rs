@@ -6,9 +6,11 @@
 use crate::core::download::DownloadEngine;
 
 use crate::error::TideError;
-use crate::persistence::repositories::{SettingsRepository, SourceRepository, TaskRepository};
+use crate::persistence::repositories::{
+    SettingsRepository, SourceRepository, TaskRepository, TorrentRepository,
+};
 use rusqlite::Connection;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub struct AppState {
     db: Mutex<Connection>,
@@ -18,16 +20,26 @@ pub struct AppState {
     /// M1: HTTP download engine (dependency-injected, M1 §63/§64 —
     /// no global singleton).
     pub download_engine: DownloadEngine,
+    /// M3: torrent engine (librqbit adapter) + its repository.
+    pub torrent_engine: crate::core::torrent::TorrentEngine,
+    pub torrent_repository: Arc<TorrentRepository>,
 }
 
 impl AppState {
-    pub fn new(conn: Connection, download_engine: DownloadEngine) -> Self {
+    pub fn new(
+        conn: Connection,
+        download_engine: DownloadEngine,
+        torrent_engine: crate::core::torrent::TorrentEngine,
+        torrent_repository: Arc<TorrentRepository>,
+    ) -> Self {
         AppState {
             db: Mutex::new(conn),
             task_repository: TaskRepository,
             source_repository: SourceRepository,
             settings_repository: SettingsRepository,
             download_engine,
+            torrent_engine,
+            torrent_repository,
         }
     }
 

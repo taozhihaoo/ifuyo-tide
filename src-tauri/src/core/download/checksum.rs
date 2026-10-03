@@ -53,6 +53,12 @@ impl ChecksumWriter {
     }
 }
 
+impl Default for ChecksumWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Compares an expected hex digest against the computed one,
 /// case-insensitively.
 pub fn matches(expected_hex: &str, computed_hex: &str) -> bool {
