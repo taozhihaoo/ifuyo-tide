@@ -46,6 +46,8 @@ pub struct ServerState {
     pub seen_if_ranges: Arc<Mutex<Vec<String>>>,
     /// /changing bumps its ETag on every full GET (remote-changed tests).
     pub changing_etag_version: Arc<AtomicU32>,
+    /// Every response status line served (redirect-matrix assertions).
+    pub seen_statuses: Arc<Mutex<Vec<String>>>,
     /// /unstable resets the first body transmission, then serves fully.
     pub unstable_reset_done: Arc<AtomicU32>,
 }
@@ -66,6 +68,10 @@ impl TestServer {
 
     pub fn seen_if_ranges(&self) -> Vec<String> {
         self.state.seen_if_ranges.lock().unwrap().clone()
+    }
+
+    pub fn seen_statuses(&self) -> Vec<String> {
+        self.state.seen_statuses.lock().unwrap().clone()
     }
 }
 
@@ -237,12 +243,16 @@ fn route(request: &Request, state: &ServerState) -> Option<Response> {
 
     if let Some(rest) = path.strip_prefix("/redirect/") {
         let hop: u32 = rest.parse().unwrap_or(99);
-        if hop < 3 {
+        // Full M1 DoD matrix: 301/302/303/307/308 — one per hop, five hops
+        // total before the final resource.
+        if hop < 5 {
             let status_line = [
                 "301 Moved Permanently",
                 "302 Found",
+                "303 See Other",
                 "307 Temporary Redirect",
-            ][(hop % 3) as usize];
+                "308 Permanent Redirect",
+            ][hop as usize];
             return Some(Response {
                 status_line,
                 headers: format!("Location: /redirect/{}\r\n", hop + 1),
@@ -261,6 +271,22 @@ fn route(request: &Request, state: &ServerState) -> Option<Response> {
             None,
             state,
         ));
+    }
+
+    // True zero-byte representation (M1 §38): 200 with Content-Length: 0.
+    if path == "/empty.bin" {
+        return Some(Response {
+            status_line: "200 OK",
+            headers:
+                "ETag: \"empty\"\r\nAccept-Ranges: bytes\r\nContent-Type: application/octet-stream\r\n"
+                    .to_string(),
+            body_len: 0,
+            body_start: 0,
+            body: Some(Vec::new()),
+            generator: None,
+            chunk_delay_ms: 0,
+            omit_length: false,
+        });
     }
 
     match path.as_str() {

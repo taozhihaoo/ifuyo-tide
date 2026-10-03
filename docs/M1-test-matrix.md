@@ -36,7 +36,7 @@ pnpm build / pnpm tauri build    # PASS
 | Pause → `.part` kept → Resume with server-observed `Range` → complete | PASS |
 | Cancel mid-download → `.part` deleted, never finalized | PASS |
 | Connection reset mid-body (`/unstable`) → retry resumes from partial, attempts ≥ 1 | PASS |
-| Redirect chain 301/302/307 (×3 hops) → correct final resource | PASS |
+| Redirect matrix 301/302/303/307/308 (×5 hops, per-status server log assertion) → correct final resource | PASS |
 | Chunked transfer (no Content-Length) → completes, bytes exact | PASS |
 | 404 → `DOWNLOAD_HTTP_STATUS`, zero retries | PASS |
 | Checksum mismatch → `DOWNLOAD_CHECKSUM_MISMATCH`, `.part` kept | PASS |
@@ -44,7 +44,8 @@ pnpm build / pnpm tauri build    # PASS
 | Remote changed (ETag bump) + partial → restart from zero | PASS |
 | Complete local + 416 (total == local) → finalize without re-download | PASS |
 | SSRF private-literal URL blocked at request level | PASS |
-| Small/zero-ish sizes, spot pattern verification at 0 / 50 % / EOF | PASS |
+| Small sizes, spot pattern verification at 0 / 50 % / EOF | PASS |
+| **True zero-byte representation** (Content-Length: 0) → completes, final file exactly 0 bytes, empty-body SHA-256 | PASS |
 
 ## Large file (M1 §29)
 

@@ -143,6 +143,8 @@ async fn pause_resume_uses_range_and_completes() {
     let dir = temp_dir("pause-resume");
     let len: u64 = 1024 * 1024;
     let engine = DownloadEngine::new();
+    // SHA-256 across a pause/resume boundary: the digest must match the
+    // full pattern, proving resumed bytes are byte-exact (M1 §51/§30).
     let request = make_request(&server, "/slow/medium.bin", &dir, Some(pattern_sha256(len)));
     let shared = engine.start(request, None).await.expect("start");
     let id = shared.request.download_id.clone();
@@ -460,23 +462,22 @@ async fn ssrf_baseline_blocks_private_literal_urls() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn zero_byte_download_completes() {
+async fn true_zero_byte_download_completes() {
+    // M1 §38: a REAL zero-byte representation (Content-Length: 0), not a
+    // small-file stand-in. The engine must complete, finalize atomically
+    // and produce an empty final file.
     let server = spawn().await;
     let dir = temp_dir("zero");
     let engine = DownloadEngine::new();
-    // 0-byte payload: /small with Range bytes=0- on empty representation
-    // isn't routable here, so use a checksum-free empty representation via
-    // the default route trick: none exists — instead assert a small file
-    // and document zero-byte coverage at the sink level (FileSink test).
-    let request = make_request(&server, "/small.bin", &dir, None);
+    let request = make_request(&server, "/empty.bin", &dir, Some(pattern_sha256(0)));
     let shared = engine.start(request, None).await.expect("start");
-    let status = wait_terminal(
-        &engine,
-        &shared.request.download_id,
-        Duration::from_secs(30),
-    )
-    .await;
-    assert_eq!(status.lifecycle, DownloadLifecycle::Completed);
+    let status = wait_terminal(&engine, &shared.request.download_id, Duration::from_secs(30)).await;
+    assert_eq!(status.lifecycle, DownloadLifecycle::Completed, "{:?}", status.error);
+    assert_eq!(status.downloaded, 0);
+    let final_path = status.final_path.expect("final");
+    let meta = std::fs::metadata(&final_path).expect("final exists");
+    assert_eq!(meta.len(), 0, "final file must be exactly 0 bytes");
+    assert!(!status.part_path.as_ref().is_some_and(|p| p.exists()), "part consumed by finalize");
     let _ = std::fs::remove_dir_all(dir);
 }
 
