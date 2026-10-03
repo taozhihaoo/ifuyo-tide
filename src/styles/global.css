@@ -485,3 +485,15 @@ button:focus-visible {
   color: var(--accent);
   margin-right: 6px;
 }
+
+/* ---------- M4 player ---------- */
+
+.player-state {
+  margin-top: 10px;
+}
+
+.torrent-files .torrent-file-play {
+  margin-left: 10px;
+  padding: 1px 8px;
+  font-size: 11px;
+}

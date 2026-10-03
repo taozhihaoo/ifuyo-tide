@@ -7,8 +7,14 @@ import type { DownloadDto } from "./downloadApi";
  * M1 real-download view: URL → engine → live progress → pause/resume/
  * cancel. Every number comes from the Rust engine via the throttled
  * download://progress event — no fake progress anywhere.
+ * M4(上): tasks with bytes on disk can play progressively through the
+ * Tide gateway (the .part while downloading, the final file when done).
  */
-export function DownloadsView() {
+export function DownloadsView({
+  onPlay,
+}: {
+  onPlay?: (source: { kind: "download_task"; task_id: string }) => void;
+}) {
   const [downloads, setDownloads] = useState<Map<string, DownloadDto>>(new Map());
   const [url, setUrl] = useState("");
   const [checksum, setChecksum] = useState("");
@@ -129,7 +135,7 @@ export function DownloadsView() {
       ) : (
         <ul className="task-list">
           {[...downloads.values()].map((d) => (
-            <DownloadCard key={d.downloadId} d={d} />
+            <DownloadCard key={d.downloadId} d={d} onPlay={onPlay} />
           ))}
         </ul>
       )}
@@ -141,9 +147,16 @@ interface UnlistenLike {
   (): void;
 }
 
-function DownloadCard({ d }: { d: DownloadDto }) {
+function DownloadCard({
+  d,
+  onPlay,
+}: {
+  d: DownloadDto;
+  onPlay?: (source: { kind: "download_task"; task_id: string }) => void;
+}) {
   const active = d.state === "running" || d.state === "created";
   const paused = d.state === "paused";
+  const playable = d.downloadedBytes > 0;
   return (
     <li className="task-card" data-testid="download-card">
       <div className="task-main">
@@ -174,6 +187,16 @@ function DownloadCard({ d }: { d: DownloadDto }) {
         </div>
       )}
       <div className="task-actions">
+        {playable && onPlay && (
+          <button
+            type="button"
+            className="btn btn-small"
+            title="Play what has downloaded so far — streams through the Tide gateway"
+            onClick={() => onPlay({ kind: "download_task", task_id: d.downloadId })}
+          >
+            Play
+          </button>
+        )}
         {active && (
           <button
             type="button"

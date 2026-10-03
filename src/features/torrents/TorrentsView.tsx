@@ -6,8 +6,14 @@ import type { TorrentDto } from "./torrentApi";
 /**
  * M3 torrent view: real magnet/.torrent tasks, file selection, and
  * honest progress from the engine — no fake data anywhere.
+ * M4(上): any file in the torrent can play progressively through the
+ * Tide gateway while the swarm is still downloading.
  */
-export function TorrentsView() {
+export function TorrentsView({
+  onPlay,
+}: {
+  onPlay?: (source: { kind: "torrent_file"; task_id: string; file_index: number }) => void;
+}) {
   const [torrents, setTorrents] = useState<TorrentDto[]>([]);
   const [magnet, setMagnet] = useState("");
   const [torrentPath, setTorrentPath] = useState("");
@@ -108,7 +114,7 @@ export function TorrentsView() {
       ) : (
         <ul className="task-list">
           {torrents.map((t) => (
-            <TorrentCard key={t.id} t={t} onChanged={refresh} />
+            <TorrentCard key={t.id} t={t} onChanged={refresh} onPlay={onPlay} />
           ))}
         </ul>
       )}
@@ -116,7 +122,15 @@ export function TorrentsView() {
   );
 }
 
-function TorrentCard({ t, onChanged }: { t: TorrentDto; onChanged: () => void }) {
+function TorrentCard({
+  t,
+  onChanged,
+  onPlay,
+}: {
+  t: TorrentDto;
+  onChanged: () => void;
+  onPlay?: (source: { kind: "torrent_file"; task_id: string; file_index: number }) => void;
+}) {
   const [showFiles, setShowFiles] = useState(false);
 
   return (
@@ -195,6 +209,18 @@ function TorrentCard({ t, onChanged }: { t: TorrentDto; onChanged: () => void })
             <li key={f.index} className={f.selected ? "" : "dim"}>
               <span className="file-index">#{f.index}</span> {f.path}{" "}
               <span className="dim">({formatBytes(f.size)})</span>
+              {onPlay && t.infoHash && (
+                <button
+                  type="button"
+                  className="btn btn-small torrent-file-play"
+                  title="Stream this file through the Tide gateway"
+                  onClick={() =>
+                    onPlay({ kind: "torrent_file", task_id: t.id, file_index: f.index })
+                  }
+                >
+                  Play
+                </button>
+              )}
             </li>
           ))}
         </ul>
