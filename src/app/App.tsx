@@ -1,14 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sidebar, type ViewId } from "../components/Sidebar";
 import { LibraryView } from "../features/library/LibraryView";
 import { PlayerView } from "../features/player/PlayerView";
 import { TasksView } from "../features/tasks/TasksView";
 import { SettingsView } from "../features/settings/SettingsView";
 import { SpikeView } from "../features/spike/SpikeView";
+import { spikeAutorunEnabled } from "../lib/spikeApi";
 
 export default function App() {
   const [view, setView] = useState<ViewId>("downloads");
   const [createRequest, setCreateRequest] = useState(0);
+
+  // M0.5 SPIKE: hands-free experiment mode jumps straight to the spike
+  // view so the autorun sequence mounts and executes.
+  useEffect(() => {
+    void spikeAutorunEnabled().then((enabled) => {
+      if (enabled) setView("spike");
+    });
+  }, []);
 
   return (
     <div className="app">

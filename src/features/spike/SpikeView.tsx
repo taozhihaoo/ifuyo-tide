@@ -27,7 +27,12 @@ interface MatrixRow {
   seekMs: number | null;
   error: string | null;
   state: "pending" | "running" | "done";
+  sizePixels?: string;
+  timeline?: string;
 }
+
+// Module-scoped: guards against any remount/instance duplication.
+let autorunChainStarted = false;
 
 export function SpikeView() {
   const [media, setMedia] = useState<MediaFixture[]>([]);
@@ -39,6 +44,10 @@ export function SpikeView() {
   const [playSource, setPlaySource] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Autorun must execute exactly once even if its callbacks are
+  // re-created when `media` loads. Module-level flag: survives
+  // remounts and multiple instances.
+  const autorunStarted = useRef(false);
 
   const refreshStatus = useCallback(async () => {
     setStatus(await spike.spikeStatus());
@@ -155,23 +164,33 @@ export function SpikeView() {
       }
       report.progressAtPlayStart = status.progressBytes;
 
-      // experiment K sample: throttle the gateway during first playback
-      await spike.spikeGatewaySlowMs(200);
+      // experiment K sample: throttle the gateway during first playback.
+      // Opening the session first also starts the gateway.
       const session = await spike.spikeOpenPlaybackSession("torrent");
       setPlayUrl(session.url);
       setPlaySource(`Gateway → torrent (${session.source}) [autorun]`);
 
       const video = await waitForVideo(videoRef);
       video.muted = true;
+      // Experiment K sample: throttle the gateway (200 ms per 256 KiB
+      // chunk ≈ 1.3 MB/s) during FIRST playback to observe WebView2's
+      // buffering behavior below consumption speed.
+      await spike.spikeGatewaySlowMs(200).catch(() => {});
       const tLoad = performance.now();
-      await waitForEvent(video, "loadedmetadata", 60_000);
+      // Local torrents serve metadata faster than React can render — the
+      // event may already have fired before we could listen for it.
+      if (video.readyState < 1) {
+        await waitForEvent(video, "loadedmetadata", 60_000);
+      }
       report.durationSec = video.duration;
+      const playingPromise = waitForEvent(video, "playing", 120_000);
       await video.play();
-      await waitForEvent(video, "playing", 120_000);
+      await playingPromise;
       report.tFirstFrameMs = Math.round(performance.now() - tLoad);
       report.videoWidth = video.videoWidth;
       report.videoHeight = video.videoHeight;
       report.playing = true;
+      await spike.spikeGatewaySlowMs(0).catch(() => {});
 
       // H4: seek to 50% — target data is very likely not downloaded yet
       const seekStarted = performance.now();
@@ -182,7 +201,6 @@ export function SpikeView() {
         report.resumedAfterSeek = false;
       });
       report.resumedAfterSeek = report.resumedAfterSeek ?? true;
-      await spike.spikeGatewaySlowMs(0);
 
       const finalStatus = await spike.spikeTorrentStatus();
       report.finalProgressBytes = finalStatus?.progressBytes;
@@ -195,17 +213,36 @@ export function SpikeView() {
       report.error = String(err);
       setNote(`AUTORUN torrent chain failed: ${String(err)}`);
     } finally {
-      await spike.spikeGatewaySlowMs(0);
+      await spike.spikeGatewaySlowMs(0).catch(() => {});
+      report.gatewayEvents = (await spike.spikeEvents("gateway").catch(() => [])).slice(-30);
+      report.fixtureEvents = (await spike.spikeEvents("fixture").catch(() => [])).slice(-6);
     }
     await spike.spikeReportMediaResult(report);
   }, []);
 
   useEffect(() => {
     void (async () => {
-      if (!(await spike.spikeAutorunEnabled())) return;
+      // Set synchronously: the effect re-fires when `media` loads and a
+      // double-run would interleave two experiment chains.
+      if (autorunChainStarted) return;
+      autorunChainStarted = true;
+      autorunStarted.current = true;
+      if (!(await spike.spikeAutorunEnabled())) {
+        autorunStarted.current = false;
+        autorunChainStarted = false;
+        return;
+      }
       setNote("AUTORUN: running full experiment sequence…");
       try {
         await runMatrix();
+        // Server-side view of what the browser actually requested.
+        const fixtureEvents = await spike.spikeEvents("fixture");
+        const gatewayEvents = await spike.spikeEvents("gateway");
+        await spike.spikeReportMediaResult({
+          kind: "server-request-log",
+          fixture: fixtureEvents.slice(-40),
+          gateway: gatewayEvents.slice(-40),
+        });
       } catch (err) {
         await spike.spikeReportMediaResult({
           kind: "autorun-matrix",
@@ -213,7 +250,13 @@ export function SpikeView() {
           error: String(err),
         });
       }
-      await runTorrentChain();
+      await runTorrentChain().catch((err) =>
+        spike.spikeReportMediaResult({
+          kind: "autorun-torrent",
+          ok: false,
+          error: "unhandled: " + String(err),
+        }),
+      );
     })();
   }, [runMatrix, runTorrentChain]);
 
@@ -434,36 +477,80 @@ async function runSingleFormat(
     const video = document.createElement("video");
     video.muted = true; // muted playback is always allowed; documented in the report
     video.preload = "auto";
+    video.style.position = "fixed";
+    video.style.left = "-9999px";
     const url = `http://127.0.0.1:${fixturePort}/media/${file}`;
     const started = performance.now();
     let tFirstFrame: number | null = null;
     let settled = false;
+    const timeline: string[] = [];
 
-    const timeout = window.setTimeout(() => finish("timeout after 20s"), 20_000);
+    const mark = (what: string) => {
+      if (timeline.length < 14) {
+        timeline.push(`${what}@${Math.round(performance.now() - started)}ms`);
+      }
+    };
 
-    function finish(error: string | null) {
-      if (settled) return;
-      settled = true;
+    // Attach to the document: fully detached elements are not guaranteed
+    // to fetch/render, and this spike plays for real.
+    document.body.appendChild(video);
+
+    function cleanup() {
       window.clearTimeout(timeout);
+      document.removeEventListener("securitypolicyviolation", onCsp);
+      video.pause();
       video.removeAttribute("src");
       video.load();
-      resolve({
+      video.remove();
+    }
+
+    function result(seekMs: number | null, error: string | null) {
+      return {
         file,
         loadMs: Math.round(performance.now() - started),
         durationSec: Number.isFinite(video.duration) ? video.duration : null,
         playOk: tFirstFrame !== null,
         tFirstFrameMs: tFirstFrame,
-        seekMs: null,
+        seekMs,
         error,
-      });
+        sizePixels: `${video.videoWidth}x${video.videoHeight}`,
+        timeline: timeline.join(", "),
+      };
     }
 
-    video.addEventListener("loadedmetadata", () => {
-      // try playback, then a mid-file seek
-      video
-        .play()
-        .then(() => {
-          video.addEventListener("playing", () => {
+    function finish(error: string | null) {
+      if (settled) return;
+      settled = true;
+      const r = result(null, error);
+      cleanup();
+      resolve(r);
+    }
+
+    const timeout = window.setTimeout(
+      () => finish(`timeout after 20s [${timeline.join(", ")}]`),
+      20_000,
+    );
+
+    // CSP violations surface here when the policy blocks the media load.
+    function onCsp(event: SecurityPolicyViolationEvent) {
+      mark(`csp:${event.violatedDirective}`);
+      finish(`CSP blocked ${event.violatedDirective} → ${event.blockedURI}`);
+    }
+    document.addEventListener("securitypolicyviolation", onCsp);
+
+    for (const event of ["stalled", "suspend", "abort", "emptied", "canplay", "waiting", "timeupdate"]) {
+      video.addEventListener(event, () => mark(event), { once: true });
+    }
+    video.addEventListener("progress", () => mark("progress"), { once: true });
+
+    video.addEventListener(
+      "loadedmetadata",
+      () => {
+        mark("loadedmetadata");
+        // try playback, then a mid-file seek
+        video.addEventListener(
+          "playing",
+          () => {
             if (tFirstFrame === null) {
               tFirstFrame = Math.round(performance.now() - started);
             }
@@ -474,33 +561,36 @@ async function runSingleFormat(
             video.addEventListener(
               "seeked",
               () => {
-                // patch the seek latency into the result before resolving
+                mark("seeked");
                 settled = true;
-                window.clearTimeout(timeout);
-                video.removeAttribute("src");
-                video.load();
-                resolve({
-                  file,
-                  loadMs: Math.round(performance.now() - started),
-                  durationSec: Number.isFinite(video.duration) ? video.duration : null,
-                  playOk: true,
-                  tFirstFrameMs: tFirstFrame,
-                  seekMs: Math.round(performance.now() - seekStarted),
-                  error: null,
-                });
+                const r = result(
+                  Math.round(performance.now() - seekStarted),
+                  null,
+                );
+                cleanup();
+                resolve(r);
               },
               { once: true },
             );
             video.currentTime = Math.max(target, 0);
-          }, { once: true });
-        })
-        .catch((err: unknown) => finish(`play() rejected: ${String(err)}`));
-    }, { once: true });
+          },
+          { once: true },
+        );
+        video.play().catch((err: unknown) => finish(`play() rejected: ${String(err)}`));
+      },
+      { once: true },
+    );
 
-    video.addEventListener("error", () => {
-      const code = video.error?.code;
-      finish(`media error ${code ?? "?"} (${mediaErrorMessage(video.error?.code)})`);
-    }, { once: true });
+    video.addEventListener(
+      "error",
+      () => {
+        const code = video.error?.code;
+        finish(
+          `media error ${code ?? "?"} (${mediaErrorMessage(video.error?.code)}) [${timeline.join(", ")}]`,
+        );
+      },
+      { once: true },
+    );
 
     video.src = url;
   });
@@ -515,6 +605,8 @@ function mediaErrorMessage(code?: number): string {
     default: return "unknown";
   }
 }
+
+
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));

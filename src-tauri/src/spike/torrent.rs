@@ -100,13 +100,31 @@ async fn wait_for_listen_addr(session: &Session) -> Result<SocketAddr, TideError
 
 impl TorrentSpike {
     /// Seeds `source_file` from one session and downloads it in another.
+    ///
+    /// The download directory is wiped first: spike runs must be
+    /// reproducible and a stale partial/complete file changes librqbit's
+    /// initialization path (existing-data verification).
     pub async fn start_single(
         source_file: &Path,
         work_dir: &Path,
     ) -> Result<TorrentSpike, TideError> {
         let download_dir = work_dir.join("torrent-download");
+        let _ = std::fs::remove_dir_all(&download_dir);
         std::fs::create_dir_all(&download_dir)?;
-        Self::start(source_file, download_dir).await
+        // Whole-harness bound: any librqbit await that hangs in the app
+        // runtime must surface as an error, not a silent stall.
+        match tokio::time::timeout(
+            Duration::from_secs(120),
+            Self::start(source_file, download_dir),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(TideError::Internal(
+                "torrent harness setup timed out after 120s (see spike.torrent.step logs)"
+                    .into(),
+            )),
+        }
     }
 
     /// Seeds a whole directory (multi-file torrent, experiment F).
@@ -115,13 +133,37 @@ impl TorrentSpike {
         work_dir: &Path,
     ) -> Result<TorrentSpike, TideError> {
         let download_dir = work_dir.join("torrent-download");
+        let _ = std::fs::remove_dir_all(&download_dir);
         std::fs::create_dir_all(&download_dir)?;
-        Self::start(source_dir, download_dir).await
+        match tokio::time::timeout(
+            Duration::from_secs(120),
+            Self::start(source_dir, download_dir),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(TideError::Internal(
+                "torrent harness setup timed out after 120s (see spike.torrent.step logs)"
+                    .into(),
+            )),
+        }
     }
 
     async fn start(seed_path: &Path, download_dir: PathBuf) -> Result<TorrentSpike, TideError> {
         let started = std::time::Instant::now();
+        let step = |name: &str| {
+            crate::diagnostics::info(
+                "spike.torrent.step",
+                &[
+                    ("step", name),
+                    ("ms", &started.elapsed().as_millis().to_string()),
+                ],
+            );
+        };
+
+        step("session-seeder");
         let seeder = new_session(work_dir_of(seed_path, download_dir.parent())).await?;
+        step("session-seeder-ok");
 
         // Create + seed in one step. librqbit requires `overwrite` to
         // seed files that already exist; create_and_serve_torrent does
@@ -140,6 +182,7 @@ impl TorrentSpike {
                 TideError::Internal(format!("create_and_serve_torrent failed: {err}"))
             })?;
         let _ = seed_handle;
+        step("created-and-seeding");
 
         let torrent_bytes = created
             .as_bytes()
@@ -147,8 +190,10 @@ impl TorrentSpike {
         let info_hash = created.info_hash().as_string();
 
         let seeder_addr = wait_for_listen_addr(&seeder).await?;
+        step("seeder-listening");
 
         let downloader = new_session(download_dir.clone()).await?;
+        step("session-downloader");
         let response = downloader
             .add_torrent(
                 AddTorrent::TorrentFileBytes(torrent_bytes.clone()),
@@ -165,12 +210,18 @@ impl TorrentSpike {
         let handle = response
             .into_handle()
             .ok_or_else(|| TideError::Internal("torrent did not produce a handle".into()))?;
+        step("added-to-downloader");
 
         // Wait for metadata so file listings are available immediately.
-        handle
-            .wait_until_initialized()
+        // Bounded: an app-runtime deadlock must surface as an error, not
+        // hang the spike forever.
+        tokio::time::timeout(Duration::from_secs(30), handle.wait_until_initialized())
             .await
+            .map_err(|_| {
+                TideError::Internal("torrent initialization timed out after 30s".into())
+            })?
             .map_err(|err| TideError::Internal(format!("torrent metadata failed: {err}")))?;
+        step("initialized");
 
         let files = handle
             .with_metadata(|metadata| {

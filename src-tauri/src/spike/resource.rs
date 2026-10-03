@@ -45,6 +45,7 @@ pub enum Availability {
     Unknown,
 }
 
+#[derive(Clone)]
 pub struct FileResource {
     path: PathBuf,
     len: u64,
@@ -63,11 +64,15 @@ trait SpikeStream: tokio::io::AsyncRead + tokio::io::AsyncSeek + Unpin + Send {}
 
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncSeek + Unpin + Send> SpikeStream for T {}
 
+/// A torrent-backed resource. Every `read_range` opens an INDEPENDENT
+/// FileStream: WebView2 issues concurrent range requests (head stream +
+/// moov fetch at the file end) and a single shared, seeked stream would
+/// corrupt them — measured finding of the M0.5 spike.
+#[derive(Clone)]
 pub struct TorrentResource {
     spike: Arc<TorrentSpike>,
     file_id: usize,
     len: u64,
-    stream: tokio::sync::Mutex<Option<Box<dyn SpikeStream>>>,
     read_timeout: Duration,
 }
 
@@ -82,7 +87,6 @@ impl TorrentResource {
             spike,
             file_id,
             len,
-            stream: tokio::sync::Mutex::new(None),
             read_timeout: DEFAULT_READ_TIMEOUT,
         })
     }
@@ -92,6 +96,7 @@ impl TorrentResource {
     }
 }
 
+#[derive(Clone)]
 pub struct HttpResource {
     addr: SocketAddr,
     path: String,
@@ -104,6 +109,7 @@ impl HttpResource {
     }
 }
 
+#[derive(Clone)]
 pub enum SpikeResource {
     File(FileResource),
     Torrent(TorrentResource),
@@ -199,12 +205,10 @@ impl SpikeResource {
                 Ok(buf)
             }
             SpikeResource::Torrent(r) => {
-                let mut guard = r.stream.lock().await;
-                if guard.is_none() {
-                    let stream = r.spike.open_stream(r.file_id).await?;
-                    *guard = Some(Box::new(stream));
-                }
-                let stream = guard.as_mut().expect("stream just set");
+                // Independent stream per read: concurrent range requests
+                // (head + moov) must not share a seeked stream.
+                let mut stream = Box::new(r.spike.open_stream(r.file_id).await?)
+                    as Box<dyn SpikeStream>;
                 stream
                     .seek(SeekFrom::Start(range.start()))
                     .await

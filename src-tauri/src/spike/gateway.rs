@@ -33,7 +33,7 @@ const MAX_HEADER_BYTES: usize = 16 * 1024;
 const STREAM_CHUNK: u64 = 256 * 1024;
 
 struct SessionEntry {
-    resource: tokio::sync::Mutex<SpikeResource>,
+    resource: SpikeResource,
     name: String,
     created_at: Instant,
     ttl: Option<Duration>,
@@ -126,7 +126,7 @@ impl Gateway {
         sessions.insert(
             token.clone(),
             Arc::new(SessionEntry {
-                resource: tokio::sync::Mutex::new(resource),
+                resource,
                 name,
                 created_at: Instant::now(),
                 ttl,
@@ -301,9 +301,10 @@ async fn serve(
         return;
     };
 
-    // --- Per-session lock for the whole request (one viewer at a time
-    // per session; other sessions are unaffected) ---
-    let mut resource = entry.resource.lock().await;
+    // Clone the resource for this request: WebView2 issues CONCURRENT
+    // range requests (head stream + moov fetch), so a request must never
+    // serialize behind another one on the same session.
+    let mut resource = entry.resource.clone();
     let total_len = resource.len();
 
     events::record(
