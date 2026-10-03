@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+
+# frontend build output
+dist/
+
+# rust build output
+src-tauri/target/
+
+# tauri generated capability schemas
+src-tauri/gen/schemas/
+
+# local application data (never commit user/runtime data)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+
+# environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# IDE / OS junk
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
