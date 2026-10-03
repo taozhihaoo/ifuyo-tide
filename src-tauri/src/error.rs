@@ -14,6 +14,10 @@ pub enum TideError {
     Persistence(String),
     #[error("illegal state transition from {from} to {to}")]
     StateTransition { from: String, to: String },
+    /// A security boundary was crossed (path escape, bad host, bad
+    /// token). Never leaks details to the frontend beyond the code.
+    #[error("{0}")]
+    Security(String),
     #[error("{0}")]
     Internal(String),
 }
@@ -26,6 +30,7 @@ impl TideError {
             TideError::NotFound(_) => "NOT_FOUND",
             TideError::Persistence(_) => "PERSISTENCE",
             TideError::StateTransition { .. } => "STATE_TRANSITION",
+            TideError::Security(_) => "SECURITY",
             TideError::Internal(_) => "INTERNAL",
         }
     }
@@ -54,6 +59,12 @@ impl From<std::io::Error> for TideError {
     }
 }
 
+impl From<serde_json::Error> for TideError {
+    fn from(_err: serde_json::Error) -> Self {
+        TideError::Internal("serialization failed".to_string())
+    }
+}
+
 impl Serialize for TideError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -76,6 +87,7 @@ mod tests {
         assert_eq!(TideError::InvalidInput("x".into()).code(), "INVALID_INPUT");
         assert_eq!(TideError::NotFound("x".into()).code(), "NOT_FOUND");
         assert_eq!(TideError::Persistence("x".into()).code(), "PERSISTENCE");
+        assert_eq!(TideError::Security("x".into()).code(), "SECURITY");
         assert_eq!(TideError::Internal("x".into()).code(), "INTERNAL");
         assert_eq!(
             TideError::StateTransition {

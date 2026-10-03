@@ -9,6 +9,7 @@
 
 pub mod app_info;
 pub mod settings;
+pub mod spike;
 pub mod tasks;
 
 use crate::diagnostics;
