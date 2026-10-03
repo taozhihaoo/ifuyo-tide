@@ -4,10 +4,12 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M0 — Project Skeleton.**
-> Tide can start, create and persist tasks, and survive restarts.
-> It **cannot** download files, use torrents, or play media yet — see
-> [Planned features](#planned-features) for the roadmap.
+> **Current status: M0.5 — Technical Spike complete.**
+> The core chain `Torrent → librqbit → partial data → local Range
+> Gateway → WebView2 <video> → play/seek` has been validated end-to-end
+> with measured data (see `docs/M0.5-report.md`). Tide can start, create
+> and persist tasks, and survive restarts; downloading real user
+> sources lands in M1/M3.
 
 ---
 
@@ -25,7 +27,7 @@ upload of your data.
 | Milestone | Feature | Status |
 |---|---|---|
 | M0 | Project skeleton, task domain, SQLite persistence, IPC, security baseline | **done** |
-| M0.5 | Technology spike (streaming, WebView2 playback, librqbit feasibility) | planned |
+| M0.5 | Technology spike (streaming, WebView2 playback, librqbit feasibility) | **done** — full chain validated |
 | M1 | HTTP/HTTPS download core | planned |
 | M2 | Crash-safe persistence & resume | planned |
 | M3 | Torrent engine (librqbit) | planned |

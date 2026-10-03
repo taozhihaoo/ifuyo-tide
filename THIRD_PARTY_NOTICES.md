@@ -15,6 +15,8 @@ hardening (M10/M11) and shipped with installers.
 | thiserror (Rust) | 2.x | Apache-2.0 OR MIT | crates.io | Error derive |
 | uuid (Rust) | 1.x | Apache-2.0 OR MIT | crates.io | ID generation |
 | serde / serde_json (Rust) | 1.x | Apache-2.0 OR MIT | crates.io | Serialization |
+| **librqbit (Rust)** | **9.0.1** | **Apache-2.0** | crates.io | BitTorrent engine (validated in M0.5) |
+| tokio (Rust) | 1.x | MIT | crates.io | Async runtime |
 | @tauri-apps/api (npm) | 2.x | Apache-2.0 OR MIT | npm | Frontend IPC |
 | @tauri-apps/plugin-dialog (npm) | 2.x | Apache-2.0 OR MIT | npm | Picker JS API |
 | @tauri-apps/cli (npm) | 2.x | Apache-2.0 OR MIT | npm | Dev/build tooling |
