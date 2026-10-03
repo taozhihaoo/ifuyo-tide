@@ -29,7 +29,5 @@ hardening (M10/M11) and shipped with installers.
 | typescript (npm) | 5.x | Apache-2.0 | npm | Type checking |
 | vitest + testing-library (npm) | latest | MIT | npm | Testing (dev only) |
 
-**librqbit** (Apache-2.0) will be added when the torrent engine lands (M3).
-
 Version pins live in `Cargo.lock` / `pnpm-lock.yaml`; this table tracks
 major lines only.
