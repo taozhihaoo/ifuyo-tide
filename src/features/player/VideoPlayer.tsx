@@ -1,13 +1,15 @@
-import { useRef, useState } from "react";
-import { notifySeek, stopPlaybackSession } from "./playbackApi";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getPlaybackInfo, notifySeek, stopPlaybackSession } from "./playbackApi";
 import type { PlaybackSessionInfo } from "./playbackApi";
 
 /**
- * The ONE real player (M4(上) §64/§73): every source (HTTP download,
- * torrent file, local file) plays through the same element and the same
- * gateway URL. All displayed values come from the media element's real
- * events — when the browser cannot provide a value we show "unavailable"
- * and never invent one (§65/§66).
+ * The ONE real player (M4(上) §64/§73, M4(下) §148/§149): every source
+ * (HTTP download, torrent file, local file) plays through the same
+ * element and the same gateway URL. All displayed values come from the
+ * media element's real events or the backend's live availability —
+ * when a value cannot be known we show "unavailable" and never invent
+ * one (§65/§66). Browser-buffered and backend-available are shown as
+ * the two DISTINCT metrics they are (§149).
  */
 export function VideoPlayer({
   session,
@@ -29,8 +31,29 @@ export function VideoPlayer({
     // Real buffered-end of the range covering currentTime, in seconds.
     bufferedAhead: null as number | null,
   });
+  const [backendAvailable, setBackendAvailable] = useState<number | null>(
+    session.availableBytes,
+  );
+  const [capability] = useState(session.capability);
 
-  const read = () => {
+  // Live backend availability (M4(下) §149), refreshed at ~1 s —
+  // coarse by design (§175: no per-chunk UI churn).
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      getPlaybackInfo(session.sessionId)
+        .then((info) => {
+          if (!cancelled && info) setBackendAvailable(info.availableBytes);
+        })
+        .catch(() => {});
+    }, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [session.sessionId]);
+
+  const read = useCallback(() => {
     const el = videoRef.current;
     if (!el) return;
     let bufferedAhead: number | null = null;
@@ -47,7 +70,7 @@ export function VideoPlayer({
       duration: Number.isFinite(el.duration) ? el.duration : null,
       bufferedAhead,
     }));
-  };
+  }, []);
 
   const stop = async () => {
     try {
@@ -62,13 +85,20 @@ export function VideoPlayer({
       <div className="view-header">
         <h2>Player</h2>
         <span className="dim">
-          {session.sourceKind} · {session.contentType} · {session.size >= 0 ? formatBytes(session.size) : "unavailable"}
+          {session.sourceKind} · {session.contentType} ·{" "}
+          {session.size > 0 ? formatBytes(session.size) : "size unavailable"}
         </span>
       </div>
 
       {state.error && (
         <div className="banner banner-error" role="alert">
           {state.error}
+        </div>
+      )}
+      {!capability.supportsRandomAccess && (
+        <div className="banner" role="status">
+          This source serves progressive playback only — seeking beyond the
+          downloaded part is unavailable.
         </div>
       )}
 
@@ -83,7 +113,7 @@ export function VideoPlayer({
         style={{ width: "100%", maxHeight: "60vh", background: "#000" }}
         onLoadedMetadata={read}
         onCanPlay={read}
-        onPlay={() => setState((p) => ({ ...p, playing: true, ended: false }))}
+        onPlay={() => setState((p) => ({ ...p, playing: true, ended: false, error: null }))}
         onPause={() => setState((p) => ({ ...p, playing: false }))}
         onWaiting={() => setState((p) => ({ ...p, waiting: true }))}
         onPlaying={() => setState((p) => ({ ...p, waiting: false }))}
@@ -101,7 +131,7 @@ export function VideoPlayer({
           setState((p) => ({
             ...p,
             playing: false,
-            error: "The browser cannot decode this resource (format/container unsupported).",
+            error: "Unsupported media — the browser cannot decode this resource.",
           }))
         }
         onStalled={read}
@@ -117,8 +147,12 @@ export function VideoPlayer({
           {state.duration != null ? ` / ${formatTime(state.duration)}` : ""}
         </span>
         <span>
-          buffered ahead:{" "}
+          browser buffered:{" "}
           {state.bufferedAhead != null ? `${state.bufferedAhead.toFixed(1)}s` : "unavailable"}
+        </span>
+        <span>
+          backend available:{" "}
+          {backendAvailable != null ? formatBytes(backendAvailable) : "unavailable"}
         </span>
       </div>
 
@@ -132,6 +166,12 @@ export function VideoPlayer({
         <button
           type="button"
           className="btn btn-small"
+          disabled={!capability.supportsRandomAccess}
+          title={
+            capability.supportsRandomAccess
+              ? "Seek to the middle of the resource"
+              : "This source does not support random access"
+          }
           onClick={() => {
             const el = videoRef.current;
             if (el && Number.isFinite(el.duration)) {
