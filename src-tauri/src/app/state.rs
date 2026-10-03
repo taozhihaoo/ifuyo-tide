@@ -3,6 +3,7 @@
 //! No global mutable singletons: the state is constructed once at startup
 //! and handed to commands explicitly through Tauri's managed state.
 
+use crate::core::download::DownloadEngine;
 use crate::error::TideError;
 use crate::persistence::repositories::{SettingsRepository, SourceRepository, TaskRepository};
 use rusqlite::Connection;
@@ -13,6 +14,9 @@ pub struct AppState {
     pub task_repository: TaskRepository,
     pub source_repository: SourceRepository,
     pub settings_repository: SettingsRepository,
+    /// M1: HTTP download engine (dependency-injected, M1 §63/§64 —
+    /// no global singleton).
+    pub download_engine: DownloadEngine,
 }
 
 impl AppState {
@@ -22,6 +26,7 @@ impl AppState {
             task_repository: TaskRepository,
             source_repository: SourceRepository,
             settings_repository: SettingsRepository,
+            download_engine: DownloadEngine::new(),
         }
     }
 
