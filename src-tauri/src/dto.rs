@@ -54,6 +54,45 @@ pub struct TaskStateUpdate {
     pub state: String,
 }
 
+// ---- M1 download DTOs ----
+
+/// One download as seen by the frontend (engine status + progress).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadDto {
+    pub download_id: String,
+    pub host: String,
+    pub filename: Option<String>,
+    pub state: String,
+    pub phase: String,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub percentage: Option<f64>,
+    pub speed_bps: u64,
+    pub eta_secs: Option<u64>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+}
+
+/// Throttled progress event payload (`download://progress`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadEventDto {
+    pub download_id: String,
+    pub state: String,
+    pub phase: String,
+    pub filename: Option<String>,
+    pub progress: crate::core::download::progress::DownloadProgress,
+    pub error: Option<DownloadErrorDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadErrorDto {
+    pub code: String,
+    pub message: String,
+}
+
 /// Parses a frontend-supplied source type string.
 pub fn parse_source_type(raw: &str) -> Result<SourceType, crate::error::TideError> {
     SourceType::parse(raw)

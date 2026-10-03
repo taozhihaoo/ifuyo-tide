@@ -46,6 +46,13 @@ pub fn run() {
             commands::tasks::update_task_state,
             commands::settings::get_settings,
             commands::settings::set_download_directory,
+            // M1 HTTP download commands
+            commands::download::start_http_download,
+            commands::download::pause_download,
+            commands::download::resume_download,
+            commands::download::cancel_download,
+            commands::download::list_downloads,
+            commands::download::get_download,
             // M0.5 SPIKE commands
             commands::spike::spike_status,
             commands::spike::spike_list_media,

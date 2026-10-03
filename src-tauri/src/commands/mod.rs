@@ -8,6 +8,7 @@
 //! user-provided payload.
 
 pub mod app_info;
+pub mod download;
 pub mod settings;
 pub mod spike;
 pub mod tasks;
