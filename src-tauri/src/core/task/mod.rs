@@ -10,7 +10,13 @@ mod tests {
     use crate::error::TideError;
 
     fn task_in(state: TaskState) -> Task {
-        Task::new("task-1".into(), "src-1".into(), "Sample".into(), state)
+        Task::new(
+            crate::core::ids::new_id(),
+            crate::core::ids::new_id(),
+            "Sample".into(),
+            state,
+        )
+        .expect("valid test task")
     }
 
     #[test]
