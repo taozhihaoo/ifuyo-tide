@@ -15,11 +15,12 @@ hardening (M10/M11) and shipped with installers.
 | thiserror (Rust) | 2.x | Apache-2.0 OR MIT | crates.io | Error derive |
 | uuid (Rust) | 1.x | Apache-2.0 OR MIT | crates.io | ID generation |
 | serde / serde_json (Rust) | 1.x | Apache-2.0 OR MIT | crates.io | Serialization |
-| **librqbit (Rust)** | **9.0.1** | **Apache-2.0** | crates.io | BitTorrent engine (production since M3;  feature) |
+| **librqbit (Rust)** | **9.0.1** | **Apache-2.0** | crates.io | BitTorrent engine (production since M3; features: `disable-upload`, `stream`) |
 | tokio (Rust) | 1.x | MIT | crates.io | Async runtime |
 | reqwest (Rust) | 0.13.5 | Apache-2.0 OR MIT | crates.io | HTTP client (M1; rustls TLS, no auto-decompression) |
 | sha2 (Rust) | 0.11 | Apache-2.0 OR MIT | crates.io | SHA-256 checksums |
 | url (Rust) | 2.x | Apache-2.0 OR MIT | crates.io | URL parsing |
+| bytes / futures-util (Rust) | 1.x / 0.3 | MIT OR Apache-2.0 | crates.io | Byte buffers / async traits |
 | @tauri-apps/api (npm) | 2.x | Apache-2.0 OR MIT | npm | Frontend IPC |
 | @tauri-apps/plugin-dialog (npm) | 2.x | Apache-2.0 OR MIT | npm | Picker JS API |
 | @tauri-apps/cli (npm) | 2.x | Apache-2.0 OR MIT | npm | Dev/build tooling |
