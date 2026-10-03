@@ -2,6 +2,7 @@ pub mod download;
 pub mod ids;
 pub mod library;
 pub mod playback;
+pub mod recovery;
 pub mod resource;
 pub mod scheduler;
 pub mod source;

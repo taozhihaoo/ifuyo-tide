@@ -174,3 +174,25 @@ pub async fn get_download(
         .ok_or_else(|| TideError::NotFound(format!("download not found: {download_id}")))?;
     Ok(to_dto(&download_id, &shared))
 }
+
+/// Retry a failed download (M2 §52): same task id, new runtime, resume
+/// from the safe point. Works after an app restart — the task is
+/// restored from the persisted record and re-validated.
+#[tauri::command]
+pub async fn retry_download(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    download_id: String,
+) -> Result<(), TideError> {
+    state.download_engine.retry(&download_id, Some(app)).await
+}
+
+/// Delete a task (M2 §53): DB record + .part are removed; the
+/// downloaded final file is user data and is preserved.
+#[tauri::command]
+pub async fn delete_download(
+    state: State<'_, AppState>,
+    download_id: String,
+) -> Result<(), TideError> {
+    state.download_engine.delete(&download_id).await
+}

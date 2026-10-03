@@ -34,6 +34,7 @@ impl DownloadPhase {
 #[serde(rename_all = "snake_case")]
 pub enum DownloadLifecycle {
     Created,
+    Ready,
     Running,
     Paused,
     Completed,
@@ -45,6 +46,7 @@ impl DownloadLifecycle {
     pub fn as_str(self) -> &'static str {
         match self {
             DownloadLifecycle::Created => "created",
+            DownloadLifecycle::Ready => "ready",
             DownloadLifecycle::Running => "running",
             DownloadLifecycle::Paused => "paused",
             DownloadLifecycle::Completed => "completed",
@@ -53,10 +55,26 @@ impl DownloadLifecycle {
         }
     }
 
+    /// Restores a lifecycle from a persisted state string (M2 §8):
+    /// a stale "running" row is not a durable fact and becomes Ready
+    /// (resumable, idle); terminal states are preserved.
+    pub fn from_state_str(state: &str) -> DownloadLifecycle {
+        match state {
+            "created" | "running" => DownloadLifecycle::Ready,
+            "ready" => DownloadLifecycle::Ready,
+            "paused" => DownloadLifecycle::Paused,
+            "completed" => DownloadLifecycle::Completed,
+            "failed" => DownloadLifecycle::Failed,
+            "cancelled" => DownloadLifecycle::Cancelled,
+            _ => DownloadLifecycle::Ready,
+        }
+    }
+
     /// The equivalent M0 TaskState (single shared state vocabulary).
     pub fn to_task_state(self) -> TaskState {
         match self {
             DownloadLifecycle::Created => TaskState::Created,
+            DownloadLifecycle::Ready => TaskState::Ready,
             DownloadLifecycle::Running => TaskState::Running,
             DownloadLifecycle::Paused => TaskState::Paused,
             DownloadLifecycle::Completed => TaskState::Completed,

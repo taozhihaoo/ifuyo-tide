@@ -116,7 +116,7 @@ async fn full_download_with_checksum_and_atomic_finalize() {
     let server = spawn().await;
     let dir = temp_dir("full");
     let len: u64 = 1024 * 1024;
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(&server, "/slow/medium.bin", &dir, Some(pattern_sha256(len)));
     let shared = engine.start(request, None).await.expect("start");
     let status = wait_terminal(
@@ -142,7 +142,7 @@ async fn pause_resume_uses_range_and_completes() {
     let server = spawn().await;
     let dir = temp_dir("pause-resume");
     let len: u64 = 1024 * 1024;
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     // SHA-256 across a pause/resume boundary: the digest must match the
     // full pattern, proving resumed bytes are byte-exact (M1 §51/§30).
     let request = make_request(&server, "/slow/medium.bin", &dir, Some(pattern_sha256(len)));
@@ -194,7 +194,7 @@ async fn pause_resume_uses_range_and_completes() {
 async fn cancel_discards_part_and_never_finalizes() {
     let server = spawn().await;
     let dir = temp_dir("cancel");
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(&server, "/slow/medium.bin", &dir, None);
     let shared = engine.start(request, None).await.expect("start");
     let id = shared.request.download_id.clone();
@@ -213,7 +213,7 @@ async fn unstable_connection_retries_and_resumes_from_partial() {
     let server = spawn().await;
     let dir = temp_dir("retry");
     let len: u64 = 512 * 1024;
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(
         &server,
         "/unstable/file.bin",
@@ -243,7 +243,7 @@ async fn redirect_chain_downloads_final_resource() {
     let server = spawn().await;
     let dir = temp_dir("redirect");
     let len: u64 = 1024 * 1024;
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(&server, "/redirect/0", &dir, Some(pattern_sha256(len)));
     let shared = engine.start(request, None).await.expect("start");
     let status = wait_terminal(
@@ -267,7 +267,7 @@ async fn chunked_download_completes_without_total() {
     let server = spawn().await;
     let dir = temp_dir("chunked");
     let len: u64 = 256 * 1024;
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(
         &server,
         "/chunked/test.bin",
@@ -295,7 +295,7 @@ async fn chunked_download_completes_without_total() {
 async fn http_404_fails_without_retry() {
     let server = spawn().await;
     let dir = temp_dir("404");
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(&server, "/status/404", &dir, None);
     let shared = engine.start(request, None).await.expect("start");
     let status = wait_terminal(
@@ -317,7 +317,7 @@ async fn http_404_fails_without_retry() {
 async fn checksum_mismatch_fails_and_keeps_part() {
     let server = spawn().await;
     let dir = temp_dir("checksum");
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(&server, "/small.bin", &dir, Some("0".repeat(64)));
     let shared = engine.start(request, None).await.expect("start");
     let status = wait_terminal(
@@ -352,7 +352,7 @@ async fn range_ignored_server_restarts_instead_of_appending() {
     }
     std::fs::write(&part, &buf).expect("pre-seed part");
 
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(
         &server,
         "/norange/file.bin",
@@ -391,7 +391,7 @@ async fn remote_changed_restarts_from_zero() {
     // → the server returns 200 and the engine must restart from zero.
     let _ = std::fs::write(dir.join("changing.bin.part"), vec![0u8; 64 * 1024]);
 
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(&server, "/changing/file.bin", &dir, None);
     let shared = engine.start(request, None).await.expect("start");
     let status = wait_terminal(
@@ -427,7 +427,7 @@ async fn complete_local_with_416_finalizes() {
     }
     std::fs::write(&part, &buf).expect("seed complete part");
 
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(&server, "/range/file.bin", &dir, Some(pattern_sha256(len)));
     let shared = engine.start(request, None).await.expect("start");
     let status = wait_terminal(
@@ -468,7 +468,7 @@ async fn true_zero_byte_download_completes() {
     // and produce an empty final file.
     let server = spawn().await;
     let dir = temp_dir("zero");
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(&server, "/empty.bin", &dir, Some(pattern_sha256(0)));
     let shared = engine.start(request, None).await.expect("start");
     let status = wait_terminal(&engine, &shared.request.download_id, Duration::from_secs(30)).await;
@@ -490,7 +490,7 @@ async fn huge_file_beyond_4gib_downloads_and_verifies() {
     let server = spawn().await;
     let dir = temp_dir("huge");
     let len: u64 = 4 * 1024 * 1024 * 1024 + 512; // > 4 GiB
-    let engine = DownloadEngine::new();
+    let engine = DownloadEngine::new(std::sync::Arc::new(ifuyo_tide_lib::persistence::repositories::DownloadRepository::open_in_memory().unwrap()));
     let request = make_request(&server, "/huge.bin", &dir, Some(pattern_sha256(len)));
     let shared = engine.start(request, None).await.expect("start");
     let id = shared.request.download_id.clone();

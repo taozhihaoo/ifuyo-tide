@@ -201,6 +201,24 @@ function DownloadCard({ d }: { d: DownloadDto }) {
             Cancel
           </button>
         )}
+        {d.state === "failed" && (
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => void api.retryDownload(d.downloadId)}
+          >
+            Retry
+          </button>
+        )}
+        {(d.state === "completed" || d.state === "failed" || d.state === "cancelled") && (
+          <button
+            type="button"
+            className="btn btn-small btn-danger"
+            onClick={() => void api.deleteDownload(d.downloadId)}
+          >
+            Delete
+          </button>
+        )}
         {d.state === "completed" && <span className="dim">done ✓</span>}
       </div>
     </li>

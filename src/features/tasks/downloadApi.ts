@@ -73,6 +73,14 @@ export function getDownload(downloadId: string): Promise<DownloadDto> {
   return call<DownloadDto>("get_download", { downloadId });
 }
 
+export function retryDownload(downloadId: string): Promise<void> {
+  return call<void>("retry_download", { downloadId });
+}
+
+export function deleteDownload(downloadId: string): Promise<void> {
+  return call<void>("delete_download", { downloadId });
+}
+
 /** Subscribes to the throttled backend progress event stream. */
 export function onDownloadProgress(
   handler: (event: DownloadProgressEvent) => void,

@@ -4,6 +4,7 @@
 //! and handed to commands explicitly through Tauri's managed state.
 
 use crate::core::download::DownloadEngine;
+
 use crate::error::TideError;
 use crate::persistence::repositories::{SettingsRepository, SourceRepository, TaskRepository};
 use rusqlite::Connection;
@@ -20,13 +21,13 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(conn: Connection) -> Self {
+    pub fn new(conn: Connection, download_engine: DownloadEngine) -> Self {
         AppState {
             db: Mutex::new(conn),
             task_repository: TaskRepository,
             source_repository: SourceRepository,
             settings_repository: SettingsRepository,
-            download_engine: DownloadEngine::new(),
+            download_engine,
         }
     }
 

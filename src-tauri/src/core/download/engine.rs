@@ -4,14 +4,15 @@
 //! only); M2 will attach persistence at the checkpoint seams.
 
 use super::checksum::ChecksumWriter;
-use super::file_sink::{classify_io_error, FileSink};
+use super::file_sink::{classify_io_error, FileSink, OverwritePolicy};
 use super::http_range::{parse_content_range_header, ContentRangeParse};
 use super::progress::{compute_progress, SpeedTracker};
 use super::request::{retry_delay_ms, DownloadRequest, MAX_RETRY_ATTEMPTS};
 use super::state::{DownloadLifecycle, DownloadPhase};
-use super::url::DownloadFailure;
+use super::url::{validate_download_url, DownloadFailure};
 use super::validator::{decide_resume, ResponseValidators};
 use super::HttpTransport;
+use super::{DownloadRepository, DownloadTaskRecord};
 use crate::error::TideError;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,6 +29,9 @@ const MAX_CONCURRENT_DOWNLOADS: usize = 3;
 
 pub struct DownloadEngine {
     downloads: Mutex<HashMap<String, Arc<DownloadShared>>>,
+    /// M2: persistence boundary — the engine writes checkpoints and
+    /// state transitions through the repository, never through SQL.
+    repo: Arc<DownloadRepository>,
 }
 
 pub struct DownloadShared {
@@ -37,6 +41,7 @@ pub struct DownloadShared {
     cancel_flag: AtomicBool,
     wake: Notify,
     transport: HttpTransport,
+    repo: Arc<DownloadRepository>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,7 +59,7 @@ struct DownloadInner {
 }
 
 impl DownloadShared {
-    fn new(request: DownloadRequest) -> DownloadShared {
+    fn new(request: DownloadRequest, repo: Arc<DownloadRepository>) -> DownloadShared {
         DownloadShared {
             request,
             inner: Mutex::new(DownloadInner {
@@ -73,6 +78,102 @@ impl DownloadShared {
             cancel_flag: AtomicBool::new(false),
             wake: Notify::new(),
             transport: HttpTransport::new().expect("static config"),
+            repo,
+        }
+    }
+
+    /// Reconstructs runtime state from a persisted record (M2 §42):
+    /// no runtime object is deserialized — everything is rebuilt from
+    /// the logical record and re-validated by the caller.
+    pub(crate) fn from_record(
+        request: DownloadRequest,
+        repo: Arc<DownloadRepository>,
+        record: &DownloadTaskRecord,
+        lifecycle: DownloadLifecycle,
+    ) -> DownloadShared {
+        let validators = ResponseValidators::from_headers(
+            record.etag.as_deref(),
+            record.last_modified.as_deref(),
+        );
+        DownloadShared {
+            request,
+            inner: Mutex::new(DownloadInner {
+                lifecycle,
+                phase: DownloadPhase::Preparing,
+                downloaded: record.downloaded_bytes,
+                total: record.total_bytes,
+                validators,
+                resolved_filename: Some(record.filename.clone()),
+                part_path: Some(record.part_path.clone()),
+                final_path: Some(record.final_path.clone()),
+                error: record
+                    .last_error_code
+                    .as_deref()
+                    .zip(record.last_error_message.as_deref())
+                    .map(|(code, message)| (code.to_string(), message.to_string())),
+                attempts: 0,
+            }),
+            pause_flag: AtomicBool::new(false),
+            cancel_flag: AtomicBool::new(false),
+            wake: Notify::new(),
+            transport: HttpTransport::new().expect("static config"),
+            repo,
+        }
+    }
+
+    /// Persisted checkpoint write (M2 §20-§23). Called AFTER bytes are in
+    /// the part file so the DB ≤ durable-file invariant holds. A failed
+    /// checkpoint is logged and swallowed: a stale DB row is exactly the
+    /// state startup reconciliation fixes.
+    fn checkpoint(&self, downloaded: u64, total: Option<u64>) {
+        let validators = self.lock_inner().validators.clone();
+        let checkpoint = crate::persistence::repositories::DownloadCheckpoint {
+            downloaded_bytes: downloaded,
+            total_bytes: total,
+            etag: validators.etag.clone(),
+            last_modified: validators.last_modified.clone(),
+        };
+        if let Err(err) = self.repo.update_checkpoint(&checkpoint, &self.request.download_id) {
+            crate::diagnostics::warn(
+                "download.checkpoint_failed",
+                &[
+                    ("download_id", &self.request.download_id),
+                    ("code", err.code()),
+                ],
+            );
+        }
+    }
+
+    /// Persisted state transition (M2 §66): single write-through per
+    /// lifecycle change; failures logged, never propagated into the
+    /// download itself.
+    fn persist_state(
+        &self,
+        state: &str,
+        downloaded: u64,
+        error: Option<(&str, &str)>,
+        recovery_reason: Option<&str>,
+    ) {
+        let completed_at = if state == "completed" {
+            Some(crate::core::time::now_unix_ms())
+        } else {
+            None
+        };
+        if let Err(err) = self.repo.update_state(
+            &self.request.download_id,
+            state,
+            downloaded,
+            error,
+            recovery_reason,
+            completed_at,
+        ) {
+            crate::diagnostics::warn(
+                "download.persist_state_failed",
+                &[
+                    ("download_id", &self.request.download_id),
+                    ("code", err.code()),
+                ],
+            );
         }
     }
 
@@ -140,15 +241,18 @@ pub struct DownloadStatus {
 }
 
 impl DownloadEngine {
-    /// Construction is static-config only (TLS setup); called once at
-    /// startup, never on a user path.
-    pub fn new() -> DownloadEngine {
+    /// `repo`: the M2 persistence boundary (own SQLite connection).
+    pub fn new(repo: Arc<DownloadRepository>) -> DownloadEngine {
         DownloadEngine {
             downloads: Mutex::new(HashMap::new()),
+            repo,
         }
     }
 
     /// Registers and starts a download; returns its shared handle.
+    /// The task is persisted first (M2): a crash between insert and
+    /// first byte leaves a valid zero-progress record that startup
+    /// recovery classifies as restartable.
     pub async fn start(
         &self,
         request: DownloadRequest,
@@ -158,8 +262,56 @@ impl DownloadEngine {
             .downloads
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let shared = Arc::new(DownloadShared::new(request));
+        let shared = Arc::new(DownloadShared::new(request, self.repo.clone()));
         let id = shared.request.download_id.clone();
+        let now = crate::core::time::now_unix_ms();
+        // Persisted lifecycle: "running" is the intent; startup recovery
+        // reclassifies a stale "running" row as resumable (M2 §8).
+        let record = crate::persistence::repositories::DownloadTaskRecord {
+            id: id.clone(),
+            source_url: shared.request.url.as_str().to_string(),
+            allow_private: shared.request.url.private_allowed,
+            destination_dir: shared.request.destination_dir.clone(),
+            filename: shared
+                .request
+                .filename
+                .clone()
+                .unwrap_or_else(|| "download.bin".to_string()),
+            // Placeholder paths until the first response resolves them
+            // (update_resolved_paths overwrites these).
+            part_path: shared.request.destination_dir.join(format!("{id}.part")),
+            final_path: shared.request.destination_dir.join(format!("{id}.download")),
+            overwrite_policy: match shared.request.overwrite_policy {
+                OverwritePolicy::Fail => "fail".to_string(),
+                OverwritePolicy::Overwrite => "overwrite".to_string(),
+                OverwritePolicy::AutoRename => "auto_rename".to_string(),
+            },
+            state: "running".to_string(),
+            total_bytes: None,
+            downloaded_bytes: 0,
+            content_type: None,
+            etag: None,
+            last_modified: None,
+            checksum_algorithm: shared
+                .request
+                .expected_checksum
+                .as_ref()
+                .map(|(algo, _)| algo.as_str().to_string()),
+            checksum_expected: shared
+                .request
+                .expected_checksum
+                .as_ref()
+                .map(|(_, hex)| hex.clone()),
+            retry_count: 0,
+            last_error_code: None,
+            last_error_message: None,
+            recovery_reason: None,
+            created_at: now,
+            updated_at: now,
+            started_at: Some(now),
+            completed_at: None,
+        };
+        self.repo.insert(&record)?;
         downloads.insert(id.clone(), shared.clone());
 
         let task_shared = shared.clone();
@@ -168,9 +320,27 @@ impl DownloadEngine {
                 let mut inner = task_shared.lock_inner();
                 inner.lifecycle = DownloadLifecycle::Failed;
                 inner.error = Some((err.code().to_string(), err.message()));
+                drop(inner);
+                task_shared.persist_state("failed", task_shared.lock_inner().downloaded, Some((err.code(), &err.message())), None);
             }
         });
         Ok(shared)
+    }
+
+    /// Registers a recovered persisted task as an in-memory entry
+    /// WITHOUT starting it (M2 §69: paused stays paused, failed stays
+    /// failed, interrupted becomes resumable-but-idle until the user
+    /// resumes).
+    pub fn register_restored(&self, shared: Arc<DownloadShared>) {
+        let id = shared.request.download_id.clone();
+        self.downloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id, shared);
+    }
+
+    pub fn repo(&self) -> &Arc<DownloadRepository> {
+        &self.repo
     }
 
     pub async fn get(&self, download_id: &str) -> Option<Arc<DownloadShared>> {
@@ -201,8 +371,33 @@ impl DownloadEngine {
         Ok(())
     }
 
-    /// Resumes a paused download: in-memory session + existing `.part`
-    /// (M1 §51). Cross-restart recovery is M2 scope.
+    /// Builds a runtime entry from a persisted record with security
+    /// re-validation (M2 §36): the database is not a security boundary.
+    pub fn shared_from_record(
+        &self,
+        record: &DownloadTaskRecord,
+    ) -> Result<Arc<DownloadShared>, TideError> {
+        let validated = validate_download_url(&record.source_url, record.allow_private)?;
+        let mut request = DownloadRequest::new(
+            validated,
+            record.destination_dir.clone(),
+            None,
+            OverwritePolicy::parse(&record.overwrite_policy)?,
+            None,
+        )?;
+        request.download_id = record.id.clone();
+        let lifecycle = DownloadLifecycle::from_state_str(&record.state);
+        Ok(Arc::new(DownloadShared::from_record(
+            request,
+            self.repo.clone(),
+            record,
+            lifecycle,
+        )))
+    }
+
+    /// Resumes a paused download. Works identically for M1 in-session
+    /// pauses and M2 restored tasks: the runtime (HTTP request, sink) is
+    /// rebuilt from the persisted/derived state (M2 §42/§108).
     pub async fn resume(
         &self,
         download_id: &str,
@@ -217,6 +412,11 @@ impl DownloadEngine {
                 "download {download_id} is not paused"
             )));
         }
+        // Re-validate the persisted source (M2 §36): the database is not
+        // a security boundary.
+        let record_url = entry.request.url.as_str().to_string();
+        let allow_private = entry.request.url.private_allowed;
+        validate_download_url(&record_url, allow_private)?;
         {
             let mut inner = entry.lock_inner();
             inner.lifecycle = DownloadLifecycle::Running;
@@ -224,6 +424,70 @@ impl DownloadEngine {
             inner.error = None;
         }
         spawn_run(&entry, app);
+        Ok(())
+    }
+
+    /// Retry a failed download (M2 §52): SAME task id, new runtime,
+    /// resume from the safe point. Works after an app restart: the task
+    /// is restored from the persisted record when no runtime exists.
+    pub async fn retry(
+        &self,
+        download_id: &str,
+        app: Option<tauri::AppHandle>,
+    ) -> Result<(), TideError> {
+        let entry = match self.get(download_id).await {
+            Some(entry) => entry,
+            None => {
+                // Post-restart: restore the runtime entry from the record.
+                let record = self
+                    .repo
+                    .get(download_id)?
+                    .ok_or_else(|| {
+                        TideError::NotFound(format!("download not found: {download_id}"))
+                    })?;
+                let shared = self.shared_from_record(&record)?;
+                self.register_restored(shared.clone());
+                shared
+            }
+        };
+        let lifecycle = entry.status().lifecycle;
+        if !matches!(lifecycle, DownloadLifecycle::Failed) {
+            return Err(TideError::InvalidInput(format!(
+                "download {download_id} is not failed (state: {})",
+                lifecycle.as_str()
+            )));
+        }
+        {
+            let mut inner = entry.lock_inner();
+            inner.lifecycle = DownloadLifecycle::Running;
+            inner.phase = DownloadPhase::Connecting;
+            inner.error = None;
+        }
+        spawn_run(&entry, app);
+        Ok(())
+    }
+
+    /// Deletes a task (M2 §53): DB record removed,  discarded,
+    /// the downloaded FINAL file is user data and is preserved.
+    pub async fn delete(&self, download_id: &str) -> Result<(), TideError> {
+        let entry = self.get(download_id).await;
+        if let Some(entry) = &entry {
+            let status = entry.status();
+            if matches!(status.lifecycle, DownloadLifecycle::Running) {
+                return Err(TideError::InvalidInput(
+                    "cancel the running download before deleting it".to_string(),
+                ));
+            }
+            if let Some(part) = &status.part_path {
+                FileSink::discard(part);
+            }
+        }
+        self.repo.delete(download_id)?;
+        let mut downloads = self
+            .downloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        downloads.remove(download_id);
         Ok(())
     }
 
@@ -289,6 +553,36 @@ async fn run_download(
         set_phase(shared, DownloadPhase::Connecting);
         let status = shared.status();
         let mut downloaded = status.downloaded;
+        // M2 §6: the FILE is the source of truth for how many bytes are
+        // physically present. A crash after write-before-checkpoint (Crash
+        // A) leaves the part LONGER than the DB row — follow the file. A
+        // short part (Crash "DB ahead") truncates the resume point back.
+        if let Some(part) = &status.part_path {
+            if let Ok(meta) = std::fs::metadata(part) {
+                let physical = meta.len();
+                if physical != downloaded {
+                    crate::diagnostics::info(
+                        "download.reconcile_part",
+                        &[
+                            ("download_id", &shared.request.download_id),
+                            ("db_bytes", &downloaded.to_string()),
+                            ("file_bytes", &physical.to_string()),
+                        ],
+                    );
+                    downloaded = physical;
+                    shared.lock_inner().downloaded = physical;
+                }
+            } else if downloaded > 0 {
+                // Missing artifact with a nonzero checkpoint: the record's
+                // part was deleted externally — restart from zero.
+                crate::diagnostics::warn(
+                    "download.part_missing_restart",
+                    &[("download_id", &shared.request.download_id)],
+                );
+                downloaded = 0;
+                shared.lock_inner().downloaded = 0;
+            }
+        }
         let validators = status.validators.clone();
         let resume = decide_resume(downloaded);
         let (range_start, if_range) = match resume {
@@ -431,6 +725,13 @@ async fn run_download(
                 &filename,
                 shared.request.overwrite_policy,
             )?;
+            shared.repo.update_resolved_paths(
+                &shared.request.download_id,
+                &filename,
+                &part_path,
+                &final_path,
+                response.content_type.as_deref(),
+            )?;
             let mut inner = shared.lock_inner();
             inner.resolved_filename = Some(filename);
             inner.part_path = Some(part_path);
@@ -453,6 +754,8 @@ async fn run_download(
         // ---- body ----
         set_phase(shared, DownloadPhase::Downloading);
         let mut sink = FileSink::open(part_path.clone(), final_path, downloaded, None)?;
+        let mut last_checkpoint = Instant::now();
+        let mut bytes_since_checkpoint: u64 = 0;
         let outcome = loop {
             let wait = flag_wait(shared);
             let chunk = tokio::select! {
@@ -466,12 +769,23 @@ async fn run_download(
                     }
                     let _ = sink.bytes_written();
                     let chunk_len = bytes.len() as u64;
+                    bytes_since_checkpoint += chunk_len;
                     {
                         let mut inner = shared.lock_inner();
                         inner.downloaded += chunk_len;
                     }
                     speed.record(chunk_len, Instant::now());
+                    // M2 §20/§48 checkpoint: time-or-byte threshold,
+                    // whichever first (1 s / 1 MiB). Written AFTER the
+                    // bytes are in the part file → DB ≤ durable file.
                     let downloaded_now = shared.lock_inner().downloaded;
+                    if last_checkpoint.elapsed() >= Duration::from_secs(1)
+                        || bytes_since_checkpoint >= 1024 * 1024
+                    {
+                        shared.checkpoint(downloaded_now, total);
+                        last_checkpoint = Instant::now();
+                        bytes_since_checkpoint = 0;
+                    }
                     emit_progress(
                         shared,
                         app.as_ref(),
@@ -552,6 +866,7 @@ async fn run_download(
                     inner.downloaded = downloaded;
                     inner.final_path = Some(final_path);
                 }
+                shared.persist_state("completed", downloaded, None, None);
                 emit_progress(
                     shared,
                     app.as_ref(),
@@ -625,6 +940,7 @@ fn handle_interrupt(
             inner.part_path = None;
             inner.final_path = None;
         }
+        shared.persist_state("cancelled", status.downloaded, None, None);
         crate::diagnostics::info(
             "download.cancelled",
             &[("download_id", &shared.request.download_id)],
@@ -632,6 +948,7 @@ fn handle_interrupt(
         return Ok(());
     }
     shared.lock_inner().lifecycle = DownloadLifecycle::Paused;
+    shared.persist_state("paused", status.downloaded, None, None);
     // Consume the pause flag: a stale flag would instantly re-pause the
     // resumed task.
     shared.take_pause();
@@ -673,6 +990,9 @@ async fn decide_retry(
         inner.phase = DownloadPhase::Retrying;
         inner.attempts = *attempts;
     }
+    if let Err(err) = shared.repo.update_retry_count(&shared.request.download_id, *attempts) {
+        crate::diagnostics::warn("download.persist_retry_failed", &[("code", err.code())]);
+    }
     crate::diagnostics::info(
         "download.retrying",
         &[
@@ -707,9 +1027,12 @@ fn set_phase(shared: &Arc<DownloadShared>, phase: DownloadPhase) {
 }
 
 fn set_error(shared: &Arc<DownloadShared>, err: &TideError) {
-    let mut inner = shared.lock_inner();
-    inner.lifecycle = DownloadLifecycle::Failed;
-    inner.error = Some((err.code().to_string(), err.message()));
+    {
+        let mut inner = shared.lock_inner();
+        inner.lifecycle = DownloadLifecycle::Failed;
+        inner.error = Some((err.code().to_string(), err.message()));
+    }
+    shared.persist_state("failed", shared.lock_inner().downloaded, Some((err.code(), &err.message())), None);
 }
 
 /// Waits until pause/cancel is requested (never completes on its own).

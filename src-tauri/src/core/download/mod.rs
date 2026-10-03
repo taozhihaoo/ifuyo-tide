@@ -23,4 +23,6 @@ pub use engine::{DownloadEngine, DownloadShared, DownloadStatus};
 pub use request::DownloadRequest;
 pub use state::{DownloadLifecycle, DownloadPhase};
 pub use transport::HttpTransport;
+
+pub use crate::persistence::repositories::{DownloadRepository, DownloadTaskRecord};
 pub use url::DownloadFailure;

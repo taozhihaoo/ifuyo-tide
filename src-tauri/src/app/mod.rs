@@ -21,7 +21,7 @@ pub fn run() {
     }
     diagnostics::info(
         "app.started",
-        &[("version", env!("CARGO_PKG_VERSION")), ("milestone", "M0")],
+        &[("version", env!("CARGO_PKG_VERSION")), ("milestone", "M2")],
     );
 
     let conn = match persistence::open(&dirs.database_file) {
@@ -29,7 +29,30 @@ pub fn run() {
         Err(err) => fatal_startup("failed to open database", &err),
     };
 
-    let app_state = AppState::new(conn);
+    // M2: the download repository owns its own connection (WAL: one
+    // writer + readers) so engine checkpoints never block app queries.
+    let download_repo =
+        match crate::persistence::repositories::DownloadRepository::open(&dirs.database_file) {
+            Ok(repo) => std::sync::Arc::new(repo),
+            Err(err) => fatal_startup("failed to open download repository", &err),
+        };
+
+    // M2 startup recovery (M2 §84): scan persisted tasks, reconcile with
+    // the filesystem and register idle runtime entries BEFORE the
+    // frontend loads. Not triggered by the UI.
+    let download_engine = crate::core::download::DownloadEngine::new(download_repo.clone());
+    match crate::core::recovery::recover_all(&download_repo, &download_engine) {
+        Ok(outcomes) => {
+            diagnostics::info(
+                "task_recovery_scan",
+                &[("tasks", &outcomes.len().to_string())],
+            );
+        }
+        Err(err) => fatal_startup("startup recovery failed", &err),
+    }
+
+    let app_state = AppState::new(conn, download_engine);
+
     // M0.5 SPIKE: separate managed state for experiment infrastructure.
     let spike_state = crate::spike::state::SpikeState::default();
 
@@ -53,6 +76,9 @@ pub fn run() {
             commands::download::cancel_download,
             commands::download::list_downloads,
             commands::download::get_download,
+            // M2 persistence commands
+            commands::download::retry_download,
+            commands::download::delete_download,
             // M0.5 SPIKE commands
             commands::spike::spike_status,
             commands::spike::spike_list_media,
@@ -76,6 +102,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .unwrap_or_else(|err| fatal_startup_raw("failed to build application", &err.to_string()))
         .run(|_app, event| {
+            // M2 §31: graceful exit is best-effort. Every engine state
+            // transition is already persisted; crash recovery does not
+            // depend on this handler running.
             if let tauri::RunEvent::Exit = event {
                 diagnostics::info("app.shutdown", &[]);
             }
