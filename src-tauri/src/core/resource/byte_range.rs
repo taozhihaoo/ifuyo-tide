@@ -53,7 +53,11 @@ impl ByteRange {
         } else {
             other.start
         };
-        let hi = if self.end < other.end { self.end } else { other.end };
+        let hi = if self.end < other.end {
+            self.end
+        } else {
+            other.end
+        };
         lo < hi
     }
 }
