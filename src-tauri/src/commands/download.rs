@@ -194,5 +194,9 @@ pub async fn delete_download(
     state: State<'_, AppState>,
     download_id: String,
 ) -> Result<(), TideError> {
-    state.download_engine.delete(&download_id).await
+    state.download_engine.delete(&download_id).await?;
+    // M4(下) §102: task deleted → its playback sessions are
+    // invalidated so no session serves a dangling path.
+    state.playback.close_for_owner(&download_id);
+    Ok(())
 }

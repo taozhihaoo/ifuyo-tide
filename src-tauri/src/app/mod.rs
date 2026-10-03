@@ -95,6 +95,17 @@ pub fn run() {
         ))
         .unwrap_or_else(|err| fatal_startup("failed to start streaming gateway", &err)),
     );
+    // M4(上) §55 / M4(下) §138: idle-session reaping — one low-frequency
+    // task, no per-request timers, no busy loop.
+    {
+        let playback = playback.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(600)).await;
+                playback.reap_expired();
+            }
+        });
+    }
     let app_state = AppState::new(
         conn,
         download_engine,

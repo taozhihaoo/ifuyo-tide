@@ -403,6 +403,9 @@ pub async fn remove_torrent(state: State<'_, AppState>, id: String) -> Result<()
         }
     }
     state.torrent_repository.delete_task(&id)?;
+    // M4(下) §102: sessions on a removed task are invalidated —
+    // no session outlives its engine handle.
+    state.playback.close_for_owner(&id);
     Ok(())
 }
 
@@ -421,6 +424,8 @@ pub async fn delete_torrent_data(state: State<'_, AppState>, id: String) -> Resu
         }
     }
     state.torrent_repository.delete_task(&id)?;
+    // M4(下) §102: data is gone — playback sessions must die with it.
+    state.playback.close_for_owner(&id);
     Ok(())
 }
 
