@@ -268,6 +268,15 @@ pub async fn spike_read_media_results() -> Result<Vec<serde_json::Value>, TideEr
     Ok(serde_json::from_slice(&std::fs::read(&path)?).unwrap_or_default())
 }
 
+/// M0.5 SPIKE — hands-free experiment mode: when the app is launched
+/// with `--spike-autorun`, the spike page runs the full experiment
+/// sequence (format matrix → torrent chain → gateway playback → seek)
+/// and reports measurements, so results can be collected unattended.
+#[tauri::command]
+pub fn spike_autorun_enabled() -> bool {
+    std::env::args().any(|arg| arg == "--spike-autorun")
+}
+
 /// Lifecycle experiment (27): stops everything spike-related. The spike
 /// frontend can then verify no zombie listeners remain.
 #[tauri::command]

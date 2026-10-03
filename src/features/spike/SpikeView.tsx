@@ -133,6 +133,90 @@ export function SpikeView() {
     [refreshStatus],
   );
 
+  // ---------- hands-free autorun (--spike-autorun) ----------
+
+  const runTorrentChain = useCallback(async () => {
+    const report: Record<string, unknown> = { kind: "autorun-torrent" };
+    try {
+      const started = Date.now();
+      const st = await spike.spikeStartTorrent("single");
+      setTorrent(st);
+      report.setupMs = Date.now() - started;
+      report.infoHash = st.infoHash;
+      report.totalBytes = st.totalBytes;
+
+      // wait until a meaningful part is present (>=5% or 45s)
+      const t0 = Date.now();
+      let status = st;
+      while (Date.now() - t0 < 45_000) {
+        status = (await spike.spikeTorrentStatus()) ?? st;
+        if (status.progressBytes >= st.totalBytes * 0.05) break;
+        await sleep(1000);
+      }
+      report.progressAtPlayStart = status.progressBytes;
+
+      // experiment K sample: throttle the gateway during first playback
+      await spike.spikeGatewaySlowMs(200);
+      const session = await spike.spikeOpenPlaybackSession("torrent");
+      setPlayUrl(session.url);
+      setPlaySource(`Gateway → torrent (${session.source}) [autorun]`);
+
+      const video = await waitForVideo(videoRef);
+      video.muted = true;
+      const tLoad = performance.now();
+      await waitForEvent(video, "loadedmetadata", 60_000);
+      report.durationSec = video.duration;
+      await video.play();
+      await waitForEvent(video, "playing", 120_000);
+      report.tFirstFrameMs = Math.round(performance.now() - tLoad);
+      report.videoWidth = video.videoWidth;
+      report.videoHeight = video.videoHeight;
+      report.playing = true;
+
+      // H4: seek to 50% — target data is very likely not downloaded yet
+      const seekStarted = performance.now();
+      video.currentTime = video.duration * 0.5;
+      await waitForEvent(video, "seeked", 180_000);
+      report.seekTo50Ms = Math.round(performance.now() - seekStarted);
+      await waitForEvent(video, "playing", 180_000).catch(() => {
+        report.resumedAfterSeek = false;
+      });
+      report.resumedAfterSeek = report.resumedAfterSeek ?? true;
+      await spike.spikeGatewaySlowMs(0);
+
+      const finalStatus = await spike.spikeTorrentStatus();
+      report.finalProgressBytes = finalStatus?.progressBytes;
+      report.finished = finalStatus?.finished ?? false;
+      report.wallMs = Date.now() - started;
+      report.ok = true;
+      setNote("AUTORUN: torrent chain complete — see results-media.json");
+    } catch (err) {
+      report.ok = false;
+      report.error = String(err);
+      setNote(`AUTORUN torrent chain failed: ${String(err)}`);
+    } finally {
+      await spike.spikeGatewaySlowMs(0);
+    }
+    await spike.spikeReportMediaResult(report);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      if (!(await spike.spikeAutorunEnabled())) return;
+      setNote("AUTORUN: running full experiment sequence…");
+      try {
+        await runMatrix();
+      } catch (err) {
+        await spike.spikeReportMediaResult({
+          kind: "autorun-matrix",
+          ok: false,
+          error: String(err),
+        });
+      }
+      await runTorrentChain();
+    })();
+  }, [runMatrix, runTorrentChain]);
+
   const playTorrent = useCallback(async () => {
     const session = await spike.spikeOpenPlaybackSession("torrent");
     setPlayUrl(session.url);
@@ -430,4 +514,38 @@ function mediaErrorMessage(code?: number): string {
     case 4: return "src-not-supported";
     default: return "unknown";
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/** Resolves with the rendered <video> once React mounts it. */
+async function waitForVideo(
+  ref: React.RefObject<HTMLVideoElement | null>,
+): Promise<HTMLVideoElement> {
+  for (let i = 0; i < 100; i++) {
+    if (ref.current) return ref.current;
+    await sleep(100);
+  }
+  throw new Error("video element never mounted");
+}
+
+/** Waits for one DOM event with a hard timeout. */
+function waitForEvent(
+  target: HTMLVideoElement,
+  event: string,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      target.removeEventListener(event, onEvent);
+      reject(new Error(`timeout waiting for "${event}" after ${timeoutMs}ms`));
+    }, timeoutMs);
+    function onEvent() {
+      window.clearTimeout(timer);
+      resolve();
+    }
+    target.addEventListener(event, onEvent, { once: true });
+  });
 }

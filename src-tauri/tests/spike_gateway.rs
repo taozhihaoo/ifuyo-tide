@@ -167,7 +167,8 @@ async fn gateway_serves_suffix_range_from_eof() {
 async fn gateway_416_on_out_of_bounds() {
     let file = make_temp_file("oob");
     let (gateway, token) = setup_gateway(&file).await;
-    let response = http_request_with_range(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", Some("bytes=99999-100000")).await;
+    // start far beyond the 1 MiB file
+    let response = http_request_with_range(gateway.port, &format!("/stream/{token}"), "127.0.0.1:9", Some("bytes=9999999-10000000")).await;
     assert_eq!(response.status, 416);
     assert_eq!(
         response.headers.iter().find(|(n, _)| n == "content-range").map(|(_, v)| v.clone()),

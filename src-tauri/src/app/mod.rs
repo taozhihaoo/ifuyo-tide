@@ -63,6 +63,7 @@ pub fn run() {
             commands::spike::spike_clear_events,
             commands::spike::spike_report_media_result,
             commands::spike::spike_read_media_results,
+            commands::spike::spike_autorun_enabled,
             commands::spike::spike_shutdown,
         ])
         .build(tauri::generate_context!())

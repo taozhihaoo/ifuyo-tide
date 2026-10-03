@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn parses_206_with_headers() {
         let mut raw =
-            b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-4/100\r\n\r\nbytes".to_vec();
+            b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-9/100\r\n\r\n".to_vec();
         raw.extend_from_slice(b"0123456789");
         let body = parse_http_body_206(&raw, 10).unwrap();
         assert_eq!(body, b"0123456789");

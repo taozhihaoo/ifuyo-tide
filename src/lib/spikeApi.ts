@@ -121,6 +121,10 @@ export function spikeReadMediaResults(): Promise<Record<string, unknown>[]> {
   return call<Record<string, unknown>[]>("spike_read_media_results");
 }
 
+export function spikeAutorunEnabled(): Promise<boolean> {
+  return call<boolean>("spike_autorun_enabled");
+}
+
 export function spikeShutdown(): Promise<SpikeRuntimeInfo> {
   return call<SpikeRuntimeInfo>("spike_shutdown");
 }
