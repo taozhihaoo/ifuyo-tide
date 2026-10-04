@@ -7,7 +7,7 @@
 use crate::error::TideError;
 use crate::persistence::repositories::SettingsRepository;
 use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const KEY_CLOSE_TO_TRAY: &str = "win:close_to_tray";
 const KEY_NOTIFY_COMPLETED: &str = "win:notify_download_completed";
@@ -16,10 +16,14 @@ const KEY_NOTIFY_TORRENT: &str = "win:notify_torrent_completed";
 
 /// Defaults (§15.3: notifications must be disableable; §16.1:
 /// autostart default OFF — autostart itself lives in the plugin).
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct WindowsSettings {
     pub close_to_tray: bool,
+    /// §16: desired autostart state (registry truth via the plugin;
+    /// default OFF — §16.1).
+    #[serde(default)]
+    pub autostart_enabled: bool,
     pub notify_download_completed: bool,
     pub notify_download_failed: bool,
     pub notify_torrent_completed: bool,
@@ -29,6 +33,7 @@ impl Default for WindowsSettings {
     fn default() -> Self {
         WindowsSettings {
             close_to_tray: true,
+            autostart_enabled: false,
             notify_download_completed: true,
             notify_download_failed: true,
             notify_torrent_completed: true,
@@ -46,6 +51,7 @@ fn get_flag(conn: &Connection, key: &str, default: bool) -> bool {
 pub fn load(conn: &Connection) -> Result<WindowsSettings, TideError> {
     Ok(WindowsSettings {
         close_to_tray: get_flag(conn, KEY_CLOSE_TO_TRAY, true),
+        autostart_enabled: get_flag(conn, "win:autostart_enabled", false),
         notify_download_completed: get_flag(conn, KEY_NOTIFY_COMPLETED, true),
         notify_download_failed: get_flag(conn, KEY_NOTIFY_FAILED, true),
         notify_torrent_completed: get_flag(conn, KEY_NOTIFY_TORRENT, true),
@@ -54,21 +60,37 @@ pub fn load(conn: &Connection) -> Result<WindowsSettings, TideError> {
 
 pub fn store(conn: &Connection, settings: &WindowsSettings) -> Result<(), TideError> {
     let repo = SettingsRepository;
-    repo.set(conn, KEY_CLOSE_TO_TRAY, if settings.close_to_tray { "1" } else { "0" })?;
+    repo.set(
+        conn,
+        KEY_CLOSE_TO_TRAY,
+        if settings.close_to_tray { "1" } else { "0" },
+    )?;
     repo.set(
         conn,
         KEY_NOTIFY_COMPLETED,
-        if settings.notify_download_completed { "1" } else { "0" },
+        if settings.notify_download_completed {
+            "1"
+        } else {
+            "0"
+        },
     )?;
     repo.set(
         conn,
         KEY_NOTIFY_FAILED,
-        if settings.notify_download_failed { "1" } else { "0" },
+        if settings.notify_download_failed {
+            "1"
+        } else {
+            "0"
+        },
     )?;
     repo.set(
         conn,
         KEY_NOTIFY_TORRENT,
-        if settings.notify_torrent_completed { "1" } else { "0" },
+        if settings.notify_torrent_completed {
+            "1"
+        } else {
+            "0"
+        },
     )?;
     Ok(())
 }

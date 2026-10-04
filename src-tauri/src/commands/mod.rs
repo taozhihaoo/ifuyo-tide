@@ -16,6 +16,7 @@ pub mod settings;
 pub mod spike;
 pub mod tasks;
 pub mod torrent;
+pub mod windows;
 
 use crate::diagnostics;
 use crate::error::TideError;

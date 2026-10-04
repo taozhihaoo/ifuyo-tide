@@ -9,8 +9,8 @@
 
 use crate::error::{StreamingFailure, TideError};
 use tauri::menu::{Menu, MenuItem};
-use tauri::Manager;
 use tauri::tray::TrayIconBuilder;
+use tauri::Manager;
 
 /// §62/§76: activates (shows + focuses) the main window from any
 /// context (tray click, second instance, deep link).
@@ -26,23 +26,41 @@ pub fn activate_main_window(app: &tauri::AppHandle) {
 /// startup; counts are refreshed by the UI layer's existing poll
 /// through `update_tray_state`.
 pub fn create_tray(app: &tauri::AppHandle) -> Result<(), TideError> {
-    let show = MenuItem::with_id(app, "show", "Show Tide", true, None::<&str>)
+    let show =
+        MenuItem::with_id(app, "show", "Show Tide", true, None::<&str>).map_err(tray_error)?;
+    let pause_all = MenuItem::with_id(app, "pause-all", "Pause all downloads", true, None::<&str>)
         .map_err(tray_error)?;
-    let pause_all =
-        MenuItem::with_id(app, "pause-all", "Pause all downloads", true, None::<&str>)
-            .map_err(tray_error)?;
-    let resume_all =
-        MenuItem::with_id(app, "resume-all", "Resume all downloads", true, None::<&str>)
-            .map_err(tray_error)?;
+    let resume_all = MenuItem::with_id(
+        app,
+        "resume-all",
+        "Resume all downloads",
+        true,
+        None::<&str>,
+    )
+    .map_err(tray_error)?;
     let separator = tauri::menu::PredefinedMenuItem::separator(app).map_err(tray_error)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Tide", true, None::<&str>)
-        .map_err(tray_error)?;
+    let quit =
+        MenuItem::with_id(app, "quit", "Quit Tide", true, None::<&str>).map_err(tray_error)?;
 
-    let menu = Menu::with_items(app, &[&show, &separator, &pause_all, &resume_all, &separator, &quit])
-        .map_err(tray_error)?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show,
+            &separator,
+            &pause_all,
+            &resume_all,
+            &separator,
+            &quit,
+        ],
+    )
+    .map_err(tray_error)?;
 
     TrayIconBuilder::with_id("tide-tray")
-        .icon(app.default_window_icon().cloned().ok_or_else(|| tray_error("no app icon"))?)
+        .icon(
+            app.default_window_icon()
+                .cloned()
+                .ok_or_else(|| tray_error("no app icon"))?,
+        )
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -54,9 +72,7 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), TideError> {
                     if let Some(state) = app.try_state::<crate::app::state::AppState>() {
                         let action = event.id().as_ref();
                         let downloads: Vec<String> = {
-                            let map = state
-                                .download_engine
-                                .list_sync();
+                            let map = state.download_engine.list_sync();
                             map.iter()
                                 .filter(|s| {
                                     matches!(
@@ -84,7 +100,11 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), TideError> {
         })
         .on_tray_icon_event(|tray, event| {
             // §13.2: left click activates.
-            if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
+            if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                ..
+            } = event
+            {
                 activate_main_window(tray.app_handle());
             }
         })

@@ -3,10 +3,10 @@ pub mod state;
 
 use crate::commands;
 use crate::diagnostics;
-use tauri::Manager;
-use tauri_plugin_deep_link::DeepLinkExt;
 use crate::persistence;
 use state::AppState;
+use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 
 /// Builds and runs the Tide application.
 ///
@@ -231,10 +231,9 @@ pub fn run() {
         // §8.1: single instance MUST be registered FIRST. The callback
         // receives (&AppHandle, argv, cwd) on the SECOND process; the
         // first process's app handle routes the request (§8.3).
-        .plugin(tauri_plugin_single_instance::init(
-            {
-                let pending_launches = pending_launches.clone();
-                move |app: &tauri::AppHandle, argv: Vec<String>, _cwd: String| {
+        .plugin(tauri_plugin_single_instance::init({
+            let pending_launches = pending_launches.clone();
+            move |app: &tauri::AppHandle, argv: Vec<String>, _cwd: String| {
                 // §57: forwarded args are UNTRUSTED — classify + validate.
                 let args: Vec<String> = argv.iter().skip(1).cloned().collect();
                 match crate::platform::launch::parse_args(&args) {
@@ -256,9 +255,8 @@ pub fn run() {
                         crate::platform::tray::activate_main_window(app);
                     }
                 }
-                }
-            }),
-        )
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
@@ -331,6 +329,13 @@ pub fn run() {
             commands::scheduler::scheduler_set_task_priority,
             commands::scheduler::scheduler_set_global_bandwidth_limit,
             commands::scheduler::scheduler_get_snapshot,
+            // M8 Windows integration
+            commands::windows::windows_get_settings,
+            commands::windows::windows_set_settings,
+            commands::windows::windows_autostart_enable,
+            commands::windows::windows_autostart_disable,
+            commands::windows::windows_autostart_is_enabled,
+            commands::windows::windows_drain_launch_requests,
             // M6(上) library commands
             commands::library::library_list_roots,
             commands::library::library_add_root,

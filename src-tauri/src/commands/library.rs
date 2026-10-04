@@ -330,42 +330,33 @@ pub fn library_delete_item(state: State<'_, AppState>, item_id: String) -> Resul
 /// validated paths only. Spawning, not shell-injecting: the path is a
 /// canonicalized value from the database, passed as ONE argument.
 #[tauri::command]
-pub fn library_reveal(
+pub async fn library_reveal(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     item_id: String,
-    #[allow(unused_variables)] folder: bool,
+    folder: bool,
 ) -> Result<(), TideError> {
+    use tauri_plugin_opener::OpenerExt;
     let (canonical, _, _) = state.library.play_source(&item_id)?;
-    #[cfg(windows)]
-    {
-        if folder {
-            let parent = canonical
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or(canonical.clone());
-            std::process::Command::new("explorer")
-                .arg(parent)
-                .spawn()
-                .map_err(|_| {
-                    crate::error::StreamingFailure::Resource("could not open the folder".into())
-                })?;
-        } else {
-            std::process::Command::new("explorer")
-                .arg("/select,")
-                .arg(&canonical)
-                .spawn()
-                .map_err(|_| {
-                    crate::error::StreamingFailure::Resource(
-                        "could not open the file location".into(),
-                    )
-                })?;
-        }
-        Ok(())
-    }
-    #[cfg(not(windows))]
-    {
-        Err(TideError::InvalidInput(
-            "not supported on this platform".into(),
-        ))
+    let opener = app.opener();
+    let _ = &state;
+    if folder {
+        let parent = canonical
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| canonical.display().to_string());
+        opener.open_path(parent, None::<&str>).map_err(|_| {
+            TideError::Streaming(crate::error::StreamingFailure::Resource(
+                "could not open the folder".into(),
+            ))
+        })
+    } else {
+        opener
+            .reveal_item_in_dir(canonical.display().to_string())
+            .map_err(|_| {
+                TideError::Streaming(crate::error::StreamingFailure::Resource(
+                    "could not open the file location".into(),
+                ))
+            })
     }
 }

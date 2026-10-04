@@ -8,8 +8,8 @@
 //! confirmation (§46: LaunchRequest ≠ Task).
 
 use super::launch::LaunchRequest;
-use tauri::Emitter;
 use std::sync::Mutex;
+use tauri::Emitter;
 
 pub struct PendingLaunchQueue {
     queue: Mutex<Vec<LaunchRequest>>,
@@ -72,7 +72,10 @@ pub fn route_launch_request(
     // The window may not exist yet (early launch): queue for the
     // frontend drain, but still try a live emit for the running case.
     if app
-        .emit("app://launch-request", serde_json::to_value(&request).unwrap_or_default())
+        .emit(
+            "app://launch-request",
+            serde_json::to_value(&request).unwrap_or_default(),
+        )
         .is_err()
     {
         queue.push(request);

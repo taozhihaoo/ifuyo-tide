@@ -67,7 +67,17 @@ fn validation_error(what: &str) -> TideError {
 fn is_media_extension(ext: &str) -> bool {
     matches!(
         ext,
-        "mp4" | "m4v" | "mkv" | "webm" | "mov" | "avi" | "mp3" | "m4a" | "flac" | "wav" | "ogg"
+        "mp4"
+            | "m4v"
+            | "mkv"
+            | "webm"
+            | "mov"
+            | "avi"
+            | "mp3"
+            | "m4a"
+            | "flac"
+            | "wav"
+            | "ogg"
             | "opus"
     )
 }
@@ -181,7 +191,11 @@ pub fn parse_file_path(path: &Path) -> Result<LaunchRequest, TideError> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    let extension = name.rsplit('.').next().unwrap_or_default().to_ascii_lowercase();
+    let extension = name
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
 
     if crate::core::library::path::has_reserved_device_name(&canonical) {
         return Err(TideError::Security("reserved device name".into()));
@@ -247,10 +261,8 @@ mod tests {
         // starts_with("magnet:") alone is NOT valid (§9.2).
         assert!(parse_argument("magnet:").is_err());
         assert!(parse_argument("magnet:?xt=not-a-hash").is_err());
-        let ok = parse_argument(
-            "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
-        )
-        .unwrap();
+        let ok =
+            parse_argument("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567").unwrap();
         assert!(matches!(ok.kind, LaunchKind::OpenMagnet(_)));
     }
 
@@ -263,8 +275,10 @@ mod tests {
 
     #[test]
     fn tide_deeplink_parsed_and_validated() {
-        let ok = parse_argument("tide://add?magnet=magnet:%3Fxt%3Durn:btih:0123456789abcdef0123456789abcdef01234567")
-            .expect("valid magnet deep link");
+        let ok = parse_argument(
+            "tide://add?magnet=magnet:%3Fxt%3Durn:btih:0123456789abcdef0123456789abcdef01234567",
+        )
+        .expect("valid magnet deep link");
         assert!(matches!(ok.kind, LaunchKind::OpenMagnet(_)));
 
         // Unsupported command.
@@ -307,16 +321,16 @@ mod tests {
     /// §40: one invalid argument fails the batch structurally.
     #[test]
     fn invalid_arg_fails_batch() {
-        let args = vec!["http://127.0.0.1/ok".to_string(), "garbage no scheme".to_string()];
+        let args = vec![
+            "http://127.0.0.1/ok".to_string(),
+            "garbage no scheme".to_string(),
+        ];
         assert!(parse_args(&args).is_err());
     }
 
     #[test]
     fn torrent_path_classification() {
-        let dir = std::env::temp_dir().join(format!(
-            "tide-m8-{}",
-            crate::core::ids::new_id()
-        ));
+        let dir = std::env::temp_dir().join(format!("tide-m8-{}", crate::core::ids::new_id()));
         std::fs::create_dir_all(&dir).unwrap();
         let torrent = dir.join("real.torrent");
         std::fs::write(&torrent, b"d4:infod4:name4:teste").unwrap();
@@ -341,10 +355,7 @@ mod tests {
 
     #[test]
     fn media_path_classification() {
-        let dir = std::env::temp_dir().join(format!(
-            "tide-m8-{}",
-            crate::core::ids::new_id()
-        ));
+        let dir = std::env::temp_dir().join(format!("tide-m8-{}", crate::core::ids::new_id()));
         std::fs::create_dir_all(&dir).unwrap();
         let media = dir.join("movie.mp4");
         std::fs::write(&media, b"fake").unwrap();
