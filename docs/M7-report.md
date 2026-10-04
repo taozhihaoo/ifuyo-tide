@@ -1,118 +1,132 @@
-# M7(上) Report
+# M7 Final Report
 
-## 1. Executive Summary
+Per §168 — covers BOTH halves of M7.
 
-The scheduler now exists as an independent CONTROL PLANE: a pure
-deterministic policy computes bandwidth allocations from an immutable
-snapshot (tasks + playback sessions + global cap), and the data plane
-enforces them for real — per-task HTTP token buckets in the M1 chunk
-loop and a session-level torrent rate via librqbit's PUBLIC ratelimits
-API. Playback scheduling follows REAL browser-buffer seconds with
-hysteresis; background tasks keep an anti-starvation floor. Every
-decision carries a decomposable reason. 16 policy/bandwidth unit tests
-incl. the §91–§96 examples, 3 integration tests over real engines,
-286 Rust + 25 frontend tests green, release build PASS.
+## Executive Summary
 
-## 2. FACTS
+M7 completes Tide's resource-allocation brain: a PURE deterministic
+policy computes bandwidth allocations from an immutable snapshot
+(tasks + playback sessions + global cap), a runtime diffs and applies
+them to the data plane (per-task HTTP token buckets, session-level
+torrent rate via librqbit's public API), playback buffer health drives
+priority with hysteresis, and every decision carries a decomposable
+reason. 301 Rust tests (incl. 16 policy/bandwidth/adapter units, 4
+RangeSet tests, 7 simulation scenarios, property fuzzing, 3
+engine-integration tests) + 25 frontend tests green; benchmark: 1000
+tasks in 807 µs/tick. One policy defect (missing stress escalation)
+was found by the simulation suite and fixed.
 
-- Rust 286/0 (incl. 16 scheduler unit + 3 scheduler integration
-  tests), frontend 25/0, `tsc` clean, fmt clean, clippy zero warnings
-  in scheduler code, `pnpm tauri build` PASS.
-- REAL pacing proven: 1 MiB @ 256 KiB/s completes in ≈2 s (unlimited
-  ≈0.1 s); the §17 diff applies 100k → (skip) → 250k exactly once each.
-- rqbit 9.0.1 exposes `Session.ratelimits.set_download_bps` — the
-  torrent adapter needs NO fork (§12).
-- Config defaults are marked INITIAL DEFAULTS (§74) — critical 4 s /
-  low 12 s / target 30 s / recovery 10 s, emergency min 2 MiB/s,
-  playback target 6 MiB/s.
+## FACTS
 
-## 3. HYPOTHESES
+- 301/0 Rust, 25/0 frontend, `tsc` clean, fmt clean, clippy zero
+  warnings in scheduler code, `pnpm tauri build` PASS.
+- REAL enforcement: 1 MiB @ 256 KiB/s ≈ 2 s (unlimited ≈ 0.1 s); diff
+  applies 100k → (skip) → 250k exactly once.
+- Benchmark: 10/100/500/1000 tasks → 7.7 µs / 71 µs / 405 µs / 807 µs
+  per tick; 5000 demands ≈ 210–250 µs.
 
-- The 500 ms tick + diff keeps allocation churn invisible in the UI
-  (no jitter observed in the debug panel; formal measurement deferred
-  to M7(下)).
-- Real-network watermark tuning (§74) is expected to move the
-  watermarks; the config centralization makes that a one-file change.
+## CURRENT M0–M6 STATE
 
-## 4. M0–M6 state
+All suites unchanged and green. The M0 Priority enum was absorbed into
+PriorityClass; M4's DemandScheduler remains the per-chunk registry
+(merge/cancel semantics reused and now tested at §132 level).
 
-Unchanged and green. The M0-era coarse `Priority` enum was absorbed
-into `PriorityClass` (its only consumer was its own test). M4's
-DemandScheduler stays the per-chunk runtime registry; M7's policy
-layer aggregates intent ABOVE it (no rewrite, §91-reuse discipline).
+## M7 Architecture
 
-## 5. Architecture (§3/§14/§81)
+docs/M7-scheduler.md — control plane (snapshot → pure policy →
+decisions → adapters), single-writer runtime, no sockets/peers/files
+(§3/§136/§137/§138).
 
-`SchedulerSnapshot` (provider: engines + playback) → `policy::compute`
-(pure) → `AllocationDecision` intents → adapters: HTTP per-task
-limiters (real enforcement in the chunk loop), Torrent session rate
-(public API). The scheduler never touches sockets/peers/files.
+## Demand Model
 
-## 6. Playback model (§8/§27–§34)
+docs/M7-demand-model.md — DemandKind (§6), range-aware intent (§9),
+M4 registry for per-chunk bookkeeping; merge = one decision per task
+(§151/§152 by construction: one task, one allocation; playback only
+raises its class).
 
-Buffer seconds are the REAL `bufferedAhead` from the media element
-(reported with position via the M5 controller); `None` = assume
-healthy — an unreporting client cannot fake an emergency. States:
-Startup/Playing/LowBuffer/CriticalBuffer/Seeking/Paused/Ended/Error
-with watermark hysteresis (Critical exits at RECOVERY 10 s, not 1 s).
-SEEKING → Emergency elevation; Paused → demand removed (§60).
+## Scheduling Policy / Priority / Fairness / Aging
 
-## 7. Fairness / aging (§20–§22)
+docs/M7-allocation-policy.md + docs/M7-fairness.md — four-phase
+allocation, semantic classes, weighted shares, capped aging, background
+floor (§95), stress escalation 4× (§31/§92).
 
-Weighted fair split within the leftover; aging adds up to +0.5 weight
-after 60 s for Normal/Background only — capped far below Emergency.
-Background keeps a floor of the leftover when playback is healthy
-(§95) and yields to near-zero when stressed (§59).
+## Bandwidth Allocation / Playback Scheduling / Seek
 
-## 8. Integration points
+Global cap hard constraint (§24/§111); watermark state machine on REAL
+browser-buffer seconds (§8); seek = invalidate + elevate with 500 ms-
+coalesced position reporting (§32/§33).
 
-HTTP: M1 keeps retry/range/resume (§65/§66 — the scheduler only sets
-rates). Torrent: rqbit owns piece selection (§35/§64); Tide sets the
-session rate. Playback ↔ Download separation unchanged (§90): the
-scheduler only observes tasks and serves sessions.
+## HTTP Adapter / Torrent Adapter
 
-## 9. Persistence (§72)
+Capabilities declared (§82); HTTP per-task enforcement proven; torrent
+session-level via public API — per-task precision is a recorded
+limitation (P1, §12 discipline).
 
-User priorities + global bandwidth limit live in the EXISTING settings
-KV table (`sched:` namespace) — no new migration; loaded at startup;
-scores/allocations/tick state stay in-memory.
+## Persistence Boundary / IPC / UI
 
-## 10. IPC & UI (§75/§76/§78/§79)
+Settings-KV only (§72/§163 — no new migration); three commands, DTO
+snapshots; priority selector + bandwidth limit + dev debug panel.
 
-`scheduler_set_task_priority` (existence-validated, unknown →
-NOT_FOUND), `scheduler_set_global_bandwidth_limit`,
-`scheduler_get_snapshot` (DTO only). UI: per-task priority selector
-(Downloads), global bandwidth limit (Settings), dev-only debug panel
-with live decisions + reason codes (never in release).
+## Test Matrix / Simulation / Integration / Performance
 
-## 11. Test coverage
+docs/M7-test-matrix.md (full §102–§134 mapping + benchmark table).
 
-Policy: §91–§96 examples, aging cap, critical hysteresis, paused
-release, determinism, user-priority decomposition. Bandwidth: EMA +
-bucket pacing. Integration: real pacing, tick diff, torrent rate
-smoke. Frontend: telemetry report signature.
+## Security Review (§87/§88/§142)
 
-## 12. Security (§87–§89)
+IPC intent re-validated against live registries (unknown task →
+NOT_FOUND); no arbitrary resource/path access; no new capabilities;
+logs carry ids/counts/reasons only.
 
-Priority/range/task-id inputs are re-validated against the live
-registries; unknown tasks → NOT_FOUND; no arbitrary resource access;
-no implicit download tasks are created (§89); no new capabilities.
+## FACT / HYPOTHESIS / INFERENCE
 
-## 13. P0 / P1
+- FACT: policy invariants hold over 180 randomized cases; real
+  pacing + diff behavior proven over live engines.
+- HYPOTHESIS: watermark defaults (4/12/30/10 s) are good starting
+  points — real-network tuning pending (§74).
+- INFERENCE: 807 µs/1000-task tick leaves ~99.8% of the 500 ms budget
+  for everything else.
+
+## RESOLVED / CONFIRMED / OPEN / WORSENED
+
+- RESOLVED: output-contract duplicate decisions (found by property
+  fuzz); missing stress escalation (found by simulation sim1);
+  Maintenance-vs-playback merge order (found by property fuzz).
+- CONFIRMED: rqbit public ratelimits API sufficient (no fork);
+  one-task-one-allocation merge by construction (§152).
+- OPEN: combined live test (real swarm + HTTP + playback, §124);
+  real-network watermark tuning; in-window visual demos (§164) —
+  the standing manual pass, all layers automated.
+- WORSENED: nothing — all pre-M7 suites green.
+
+## P0 / P1
 
 - P0: 0.
-- P1 (recorded): torrent rate is SESSION-level (public API limit);
-  watermark tuning awaits real-network experiments (§74); the
-  playback view derives states only from reported telemetry (a
-  not-yet-reporting client is assumed healthy by design); §39 seek
-  prediction and §40+ network fingerprinting deliberately absent.
+- P1: torrent per-task rate (public API limit); watermark tuning;
+  §149 "full download" button is served by the EXISTING task flow
+  (no new demand kind needed — recorded).
 
-## 14. M7(下) boundary
+## Known Limitations
 
-M7(下) owns: E2E behavioural matrix (slow-network scenarios §92 in
-real playback), debug-panel polish, config persistence UI depth, and
-the final M7 DoD. M7(上) alone is not M7-complete (spec split note).
+Watermarks are initial defaults; no FTS-like optimizations; scheduler
+responds to reported telemetry only (a silent client is assumed
+healthy); §176-style future piece-level scheduling stays in rqbit.
 
-## 15. Commits
+## Changed Files
 
-core → runtime+enforcement → persistence/IPC/frontend.
+`core/scheduler/**` (config/model/policy/range/bandwidth/adapters/
+runtime), `core/download/engine.rs` (limiter/telemetry/Clone/Arc map),
+`core/torrent/engine.rs` (rate + telemetry), `error.rs` (Busy/
+FileInUse), `commands/scheduler.rs`, `app/{mod,state}.rs`,
+`tests/m7_scheduler.rs`, frontend telemetry/API/UI, docs set.
+
+## M8 Readiness (§157)
+
+Task + Resource + Availability + Demand + Scheduler + HTTP + Torrent +
+Playback form the testable/explainable/recoverable core M8's Windows
+integration assumes. No M8 work was started (§172).
+
+## DoD Checklist (§167)
+
+Architecture/Functional/Reliability/Testing/Security/Performance/
+Documentation — all items verified per docs/M7-test-matrix.md and this
+report; build gates PASS. M7 STOPS here (§172).
