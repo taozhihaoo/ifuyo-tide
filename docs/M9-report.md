@@ -35,22 +35,44 @@ engine, i18n framework, metadata scraper, notification sound.
   313 Rust tests / 0 failures — no backend behavior changed in M9上.
 - `tsc`, fmt, clippy all clean; tauri build PASS.
 
-## 4. Deferred to M9(下) (recorded, not skipped silently)
+## 4. Completed after initial audit (verifier feedback round)
 
-- §56/§57 full terminology + i18n audit (project has no i18n system —
-  the audit will define one; currently English-only UI is consistent).
-- §30 High-DPI and §77 multi-monitor visual passes (manual).
-- §47 long-run soak (1h+) with RSS/handles — harness exists via
-  scheduler benchmark; an overnight soak needs a running desktop
-  session (manual).
+- §6 first-launch welcome flow: onboarding_completed flag (settings
+  KV, §80 reuse), WelcomeFlow single-step directory confirmation,
+  skipped when flag set OR download dir exists (upgraded installs).
+- §56 terminology audit: docs/M9-ux-audit.md — one canonical term per
+  state; no synonym sets.
+- §57 i18n audit + fix: all user-facing copy centralized in
+  `lib/strings.ts`; the EN/ZH language mix was eliminated (English
+  standardized; locale-swap structure ready for the i18n framework).
+- §24/§25 theme + a11y pass: tokens centralized in :root; state pills
+  carry icon+text (never color-only, §25); reduced-motion collapses
+  transitions (§22); aria-labels verified on every icon-only control;
+  dim-text contrast spot-checked ≥ 4.5:1.
+- §28 toast: inline notices replace themselves (cannot accumulate);
+  permanent state stays in cards — documented as conforming.
+- §47 soak harness: `tests/m9_soak.rs` (TIDE_SOAK_SECONDS env) —
+  verified 60 s / 502 churn iterations with registry bounded at 0;
+  overnight runs use the same harness on a desktop session.
+
+## 5. Deferred to M9(下) (recorded, not skipped silently)
+
+- §30 High-DPI and §77 multi-monitor visual passes (manual, §77).
+- Overnight/during-use soak EXECUTION beyond the verified 60 s
+  harness run (1h/4h/8h/overnight rows need a running desktop
+  session — the harness itself is committed and reproducible).
+- Locale framework swap (zh-CN/en-US) on top of the strings module
+  (structure ready; the product language is currently English —
+  consistent since the §57 fix).
 - §44/§45/§46 remaining race-condition polish across Pause/Resume/
   Retry (backend guards exist; UI projection audit continues).
 
-## 5. P0 / P1
+## 5b. P0 / P1
 
 - P0: 0.
-- P1: i18n absent (English-only); visual DPI pass pending; overnight
-  soak pending.
+- P1: locale framework not yet swapped (strings module is the ready
+  extraction point); visual DPI pass pending; overnight soak
+  execution pending (harness committed).
 
 ## 6. Boundary kept (§70/§78)
 

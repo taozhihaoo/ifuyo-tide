@@ -255,7 +255,10 @@ function DownloadCard({
         <span className="task-name" title={d.filename ?? d.downloadId}>
           {d.filename ?? `${d.host}/…`}
         </span>
-        <span className={`task-state state-${d.state}`}>{d.state}</span>
+        <span className={`task-state state-${d.state}`}>
+          {d.state === "failed" ? "⚠ " : d.state === "completed" ? "✓ " : ""}
+          {d.state}
+        </span>
       </div>
       <div className="download-progress">
         <progress

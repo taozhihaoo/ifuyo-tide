@@ -43,11 +43,7 @@ pub fn get_onboarding_completed(state: State<'_, AppState>) -> Result<bool, Tide
 /// again on subsequent launches, §6 "已有设置则跳过").
 #[tauri::command]
 pub fn set_onboarding_completed(state: State<'_, AppState>) -> Result<(), TideError> {
-    let result = state.with_conn(|conn| {
-        state
-            .settings_repository
-            .set(conn, KEY_ONBOARDED, "1")
-    });
+    let result = state.with_conn(|conn| state.settings_repository.set(conn, KEY_ONBOARDED, "1"));
     ipc_result("set_onboarding_completed", result)
 }
 
