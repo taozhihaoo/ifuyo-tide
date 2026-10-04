@@ -4,11 +4,11 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M9 — Product Polish complete.**
-> Core M0–M8 wrapped in product quality: unified error copy with
-> recovery actions, per-view crash isolation, one formatting system,
-> honest loading/empty states, first-launch welcome, and reproducible
-> stability/perf harnesses. See `docs/M9-report.md`.
+> **Current status: M10 — Security & Release Hardening complete.**
+> Security boundaries audited and documented (threat model, network
+> surface, supply-chain gate via cargo-deny), debug surface removed
+> from release builds, release artifacts carry reproducible SHA-256
+> manifests. See `docs/M10-report.md` and SECURITY.md.
 
 ---
 
