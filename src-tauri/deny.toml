@@ -1,0 +1,53 @@
+# M10 §20/§146: cargo-deny configuration — advisories, licenses, bans,
+# sources. Run: cargo deny check
+
+[advisories]
+version = 2
+# RUSTSEC-2026-0293 (ringbuf 0.4.x double-free via Consumer::skip/clear)
+# is a KNOWN, DOCUMENTED limitation: the dependency is pulled in by
+# librqbit-utp 0.7.0 (pinned by librqbit 9.0.1) which requires
+# ringbuf 0.4.x — 0.5.2+ is semver-incompatible. The vulnerable path
+# requires a Drop impl to panic mid-cleanup inside librqbit-utp's
+# internal ring buffers; Tide does not call Consumer::skip/clear
+# directly. Tracked as P1 — revisit when librqbit-utp releases a
+# ringbuf-0.5-based version.
+ignore = [
+    "RUSTSEC-2026-0293",
+    # RUSTSEC-2025-0060: crypto-hash is UNMAINTAINED (not vulnerable).
+    # Pulled transitively by librqbit; no replacement available without
+    # an upstream change. Tracked — revisit on librqbit update.
+    "RUSTSEC-2025-0060",
+    # RUSTSEC-2024-0370: proc-macro-error is UNMAINTAINED (not
+    # vulnerable). Transitive via derive-more/proc-macro-crate. No
+    # direct usage in Tide code.
+    "RUSTSEC-2024-0370",
+]
+
+[bans]
+multiple-versions = "allow"
+
+[licenses]
+version = 2
+# Permissive licenses only — copyleft (GPL/AGPL/LGPL) is rejected.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "0BSD",
+    "Unlicense",
+    "CC0-1.0",
+    "BSL-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+    "CDLA-Permissive-2.0",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
