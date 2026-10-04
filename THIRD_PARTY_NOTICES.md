@@ -31,3 +31,16 @@ hardening (M10/M11) and shipped with installers.
 
 Version pins live in `Cargo.lock` / `pnpm-lock.yaml`; this table tracks
 major lines only.
+
+## Tauri plugins (M8 Windows integration)
+
+| Package | Version | License | Direct | Used In |
+|---|---|---|---|---|
+| tauri-plugin-single-instance | 2.5.2 | MIT OR Apache-2.0 | direct (Rust) | single-instance enforcement (M8) |
+| tauri-plugin-deep-link | 2.6.1 | MIT OR Apache-2.0 | direct (Rust) | tide:// protocol (M8) |
+| tauri-plugin-autostart | 2.7.0 | MIT OR Apache-2.0 | direct (Rust) | optional launch-at-login (M8) |
+| tauri-plugin-notification | 2.5.1 | MIT OR Apache-2.0 | direct (Rust+JS) | download notifications (M8) |
+| tauri-plugin-window-state | 2.5.0 | MIT OR Apache-2.0 | direct (Rust) | window restore (M8) |
+| tauri-plugin-opener | 2.7.0 | MIT OR Apache-2.0 | direct (Rust+JS) | open file / reveal in Explorer (M6/M8) |
+| @tauri-apps/plugin-notification | 2.5.1 | MIT OR Apache-2.0 | direct (JS) | frontend notification calls |
+| @tauri-apps/plugin-dialog | 2.4.0 | MIT OR Apache-2.0 | direct (JS) | directory/file pickers (M0/M6) |
