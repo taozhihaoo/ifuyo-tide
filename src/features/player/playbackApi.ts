@@ -22,6 +22,8 @@ export interface PlaybackSessionInfo {
   availableBytes: number;
   capability: PlaybackCapability;
   createdAtMs: number;
+  /** Session-scoped last position (M5 §36) for reload resume. */
+  lastPositionMs: number;
 }
 
 export type PlaybackSourceRequest =
@@ -45,6 +47,16 @@ export function getPlaybackInfo(sessionId: string): Promise<PlaybackSessionInfo 
 /** Seek happened: the backend drops demands queued for the old position. */
 export function notifySeek(sessionId: string): Promise<void> {
   return call<void>("notify_seek", { sessionId });
+}
+
+/** Most recent still-alive session (M5 §37 reload recovery). */
+export function getActivePlaybackSession(): Promise<PlaybackSessionInfo | null> {
+  return call<PlaybackSessionInfo | null>("get_active_playback_session");
+}
+
+/** M5 §36: throttled position report for session-scoped resume. */
+export function reportPlaybackPosition(sessionId: string, positionMs: number): Promise<boolean> {
+  return call<boolean>("report_playback_position", { sessionId, positionMs });
 }
 
 /**
