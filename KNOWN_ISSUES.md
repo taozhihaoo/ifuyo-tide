@@ -15,6 +15,7 @@ P3 (minor).
 | KI-5 | P3 | Validation | Run install/upgrade/uninstall on machines other than the development host | Evidence from ≥2 distinct machines | The M11 install/upgrade/uninstall pass ran on the development machine only, against a pristine per-user state with an isolated app-data root | — | Low — all flows are automated and re-runnable | OPEN — first external test opportunity closes this |
 | KI-6 | P3 | Validation | High-DPI / multi-monitor visual walkthrough; packet-capture verification of the no-cloud claim | No layout breakage; no unexpected egress | Not instrumented in M11 (manual items carried from M10 §51) | — | Low | OPEN — manual checklist in docs/M11-test-matrix.md |
 | KI-7 | P3 | Code quality | `cargo clippy --all-targets` on the workspace reports ~26 legacy warnings (pre-M6 modules, test targets) | Zero warnings | Legacy warnings inventoried in prior milestone reports; none introduced by M8–M11 | — | Cosmetic | OPEN — opportunistic cleanup |
+| KI-9 | P3 | UX | Corrupt app data (or any fatal startup failure) in a release build: process exits(1) fail-closed, but stderr is invisible — the user sees "app does not open" with no dialog | Structured startup-failure dialog | stderr-only reporting (`fatal_startup_raw`) | Reinstall/clean app data per docs/M11-install-upgrade.md §5 | Low — data-safe failure, rare trigger | OPEN — 1.0 UX item |
 
 Fixed during M11 (kept here for the release trail, not open):
 
