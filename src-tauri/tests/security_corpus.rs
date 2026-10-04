@@ -102,7 +102,7 @@ fn hostile_strings_never_panic() {
         "\0",
         "\u{0}",
         &"🎉".repeat(1000),
-        "movie\u{202e}exe.mp4",     // RTLO override
+        "movie\u{202e}exe.mp4", // RTLO override
         &"x".repeat(100_000),
         "../../..\\..\\windows\\system32\\config\\sam",
         "C:\\CON\\CON",
@@ -133,12 +133,12 @@ fn hostile_ranges_fail_closed() {
         "bytes=0-",
         "bytes=-1",
         "bytes=18446744073709551615-18446744073709551615",
-        "bytes=500-100",       // inverted
-        "bytes=0-1,5-6",       // multiple
-        "bytes=0-1,0-1",       // duplicate
-        "bytes=abc-def",       // malformed
+        "bytes=500-100",                   // inverted
+        "bytes=0-1,5-6",                   // multiple
+        "bytes=0-1,0-1",                   // duplicate
+        "bytes=abc-def",                   // malformed
         "bytes=999999999999999999999999-", // overflow
-        "",                    // empty spec
+        "",                                // empty spec
     ] {
         // resolve must never panic; out-of-bound returns NotSatisfiable,
         // malformed returns Invalid — both fail closed upstream.
