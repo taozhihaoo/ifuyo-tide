@@ -1,10 +1,13 @@
 # Security Policy
 
-## Status: M10 — Security & Release Hardening complete
+## Status: M11 — Release Candidate 0.2.0-rc.1
 
-This document reflects the security boundaries as hardened in M10.
+This document reflects the security boundaries as hardened in M10
+and re-verified at the M11 RC freeze (docs/M11-security-regression.md).
 The full threat model, attack-surface inventory and audit findings
 live in docs/M10-threat-model.md and docs/M10-security-audit.md.
+Open security items are tracked in KNOWN_ISSUES.md (KI-1 ringbuf
+advisory, KI-2 DNS-rebinding TOCTOU window).
 
 ## Supported reporting
 

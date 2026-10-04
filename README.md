@@ -4,11 +4,12 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M10 — Security & Release Hardening complete.**
-> Security boundaries audited and documented (threat model, network
-> surface, supply-chain gate via cargo-deny), debug surface removed
-> from release builds, release artifacts carry reproducible SHA-256
-> manifests. See `docs/M10-report.md` and SECURITY.md.
+> **Current status: M11 — Release Candidate 0.2.0-rc.1 (RC CONDITIONAL).**
+> The M0–M10 feature set is frozen, packaged and validated: real
+> NSIS installer, executed install/upgrade/uninstall matrix with data
+> preservation, automated release smoke, SHA-256 + manifest +
+> dependency inventory in `release/`. P0 = 0; open items are tracked
+> in `KNOWN_ISSUES.md`. See `docs/M11-report.md`.
 
 ---
 
@@ -34,9 +35,27 @@ upload of your data.
 | M5 | Player | **done** — controller/state machine/UI, reload recovery, honest buffering |
 | M6 | Local media library | **done** — scanner/reconciler/imports/query UI, benchmarked at 100k |
 | M7 | Smart scheduler | **done** — deterministic policy, real enforcement, simulations + benchmarks |
-| M8 | Windows integration | planned |
+| M8 | Windows integration | **done** — single instance, deep links, tray, autostart, notifications |
 | M9 | Product polish | **done** — error UX, boundaries, loading states, strings centralization |
-| M10–M12 | Security hardening, RC, 1.0 | planned |
+| M10 | Security hardening | complete |
+| M11 | Release Candidate 0.2.0-rc.1 | complete (RC CONDITIONAL) |
+| M12 | 1.0 | planned |
+
+## Installing, upgrading, uninstalling (RC)
+
+- **Install**: run `ifuyo-tide_0.2.0-rc.1_x64-setup.exe` (NSIS,
+  per-user, no admin rights; WebView2 bootstrapped if missing).
+- **Data locations**: app data in `%LOCALAPPDATA%\ifuyo\Tide\`
+  (database, logs, torrent metadata); downloaded files in the
+  directory you choose. The three never share a root.
+- **Upgrade**: close Tide, run the new installer over the old one —
+  tasks, settings, library and downloaded files are preserved.
+- **Uninstall**: Windows "Apps & features" or the Start-menu
+  uninstaller — application files are removed, your app data and
+  downloads are preserved by default (explicit checkbox to also
+  remove app data).
+- **Known limitations**: unsigned installer (SmartScreen prompt),
+  no built-in updater yet — see `KNOWN_ISSUES.md`.
 
 ## Architecture overview
 

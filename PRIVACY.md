@@ -6,9 +6,11 @@
   machine, in `%LOCALAPPDATA%\ifuyo\Tide\` and in the download directory
   you choose.
 - **No account.** Tide has no login, no user profile, no cloud identity.
-- **No analytics / no telemetry.** Verified again in M10 (§126: no
-  analytics, crash reporting, update checker, or remote request was
-  added by any milestone — see docs/M10-network-surface.md).
+- **No analytics / no telemetry.** Verified again in M10 and at the
+  M11 RC freeze (no analytics, crash reporting, update checker, or
+  remote request was added by any milestone — see
+  docs/M10-network-surface.md and docs/M11-security-regression.md
+  §11).
 - **No cloud download service.** Tide talks directly to the sources you
   provide. No ifuyo server ever mediates, stores, or relays your traffic.
 
