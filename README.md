@@ -4,11 +4,11 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M5 — Player complete.**
-> Downloads and playback are now one experience: press Play on any
-> task, watch while it downloads, seek into un-downloaded regions,
-> and the player survives window reloads (session + position
-> recover from the backend). See `docs/M5-report.md`.
+> **Current status: M6(上) — Local Library core complete.**
+> Downloads and playback are one experience — and now finished
+> downloads and imported folders land in a real local library with
+> scanning, search/filter/sort, and one-click playback through the
+> same gateway and player. See `docs/M6-report.md`.
 
 ---
 
@@ -32,7 +32,7 @@ upload of your data.
 | M3 | Torrent engine (librqbit) | **done** — loopback-swarm tested |
 | M4 | Progressive streaming, Range gateway, demand scheduler | **done** — unified gateway, progressive play + seek validated |
 | M5 | Player | **done** — controller/state machine/UI, reload recovery, honest buffering |
-| M6 | Local media library | planned |
+| M6 | Local media library | **in progress** — upper half done: scanning, imports, query UI, playback |
 | M7 | Smart scheduler | planned |
 | M8 | Windows integration | planned |
 | M9 | Product polish | planned |
