@@ -73,7 +73,8 @@ $manifest = [ordered]@{
         }
     )
 }
-$manifest | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $out "RELEASE-MANIFEST.json") -Encoding UTF8
+# UTF8 without BOM - strict JSON parsers reject a BOM.
+[System.IO.File]::WriteAllText((Join-Path $out "RELEASE-MANIFEST.json"), ($manifest | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
 Write-Output "MANIFEST RELEASE-MANIFEST.json written (commit $commit)"
 
 # --- dependency inventory (§63 SBOM-lite) -------------------------------------
@@ -101,7 +102,9 @@ if (Test-Path $notes) {
 # --- §9 artifact hygiene ---------------------------------------------------------
 $hygieneHits = @()
 foreach ($pattern in @("*.pfx", "*.key", "*.pem", "*.env", "*.pdb", "*.srcmap*", "*source-map*")) {
-    $hygieneHits += (Get-ChildItem $out -Recurse -File -Filter $pattern -ErrorAction SilentlyContinue).FullName
+    # no-match patterns must contribute nothing (empty filter results)
+    $found = Get-ChildItem $out -Recurse -File -Filter $pattern -ErrorAction SilentlyContinue
+    if ($found) { $hygieneHits += $found.FullName }
 }
 $trackedKeys = git -C $repo ls-files | Select-String -Pattern '\.(pfx|pem)$|(^|/)\.env$|private.*key'
 if ($trackedKeys) { $hygieneHits += "TRACKED-IN-GIT: $trackedKeys" }
