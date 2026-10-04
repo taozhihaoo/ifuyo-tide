@@ -4,14 +4,12 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M7 — Smart Scheduler complete.**
-> A deterministic control-plane scheduler allocates REAL bandwidth:
-> playback buffer health drives priority with hysteresis, background
-> downloads keep an anti-starvation floor, per-task priorities and a
-> global bandwidth cap are user-settable — all with decomposable
-> decision reasons and headless-simulation-verified invariants
-> (benchmarked at 1000 tasks / 807µs per tick). See
-> `docs/M7-report.md`.
+> **Current status: M8 — Windows Integration complete.**
+> Tide now behaves like a native Windows app: single instance,
+> tide:// deep link, .torrent association (confirm-first), system
+> tray with close-to-tray, notifications, autostart, window-state
+> restore, NSIS installer — all as a thin host boundary over the
+> M0–M7 core. See `docs/M8-report.md`.
 
 ---
 
