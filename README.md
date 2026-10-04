@@ -4,10 +4,11 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M9(上) — Product Polish underway.**
-> Core M0–M8 complete and polished: unified error copy with recovery
-> actions, per-view crash isolation, one formatting system, motion
-> tokens with reduced-motion support. See `docs/M9-report.md`.
+> **Current status: M9 — Product Polish complete.**
+> Core M0–M8 wrapped in product quality: unified error copy with
+> recovery actions, per-view crash isolation, one formatting system,
+> honest loading/empty states, first-launch welcome, and reproducible
+> stability/perf harnesses. See `docs/M9-report.md`.
 
 ---
 
@@ -34,7 +35,7 @@ upload of your data.
 | M6 | Local media library | **done** — scanner/reconciler/imports/query UI, benchmarked at 100k |
 | M7 | Smart scheduler | **done** — deterministic policy, real enforcement, simulations + benchmarks |
 | M8 | Windows integration | planned |
-| M9 | Product polish | **in progress** — upper half: error UX, boundaries, formatting system |
+| M9 | Product polish | **done** — error UX, boundaries, loading states, strings centralization |
 | M10–M12 | Security hardening, RC, 1.0 | planned |
 
 ## Architecture overview
