@@ -437,6 +437,188 @@ mod simulation {
 }
 
 // ---------------------------------------------------------------------
+// §134: performance benchmark — tick latency at scale. Run explicitly:
+//   cargo test --locked --test m7_scheduler bench_tick -- --ignored --nocapture
+// ---------------------------------------------------------------------
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "benchmark: run explicitly to record numbers"]
+async fn bench_tick_at_scale() {
+    let torrents = torrent_engine("bench").await;
+    let engine = engine();
+    let _ = &torrents; // tick benchmark is provider-driven; engines unused
+    let config = SchedulerConfig::default();
+
+    for task_count in [10usize, 100, 500, 1000] {
+        let tasks: Vec<TaskView> = (0..task_count)
+            .map(|i| TaskView {
+                task_id: format!("task-{i:05}"),
+                engine: EngineKind::Http,
+                state: TaskRunState::Running,
+                user_priority: None,
+                smoothed_bps: 0.0,
+                waited_secs: (i % 120) as u64,
+            })
+            .collect();
+        let make_snapshot = || SchedulerSnapshot {
+            now_ms: 0,
+            network: NetworkSnapshot::default(),
+            limits: GlobalLimits {
+                bandwidth_bps: Some(100 * 1024 * 1024),
+            },
+            tasks: tasks.clone(),
+            playback: vec![],
+        };
+
+        // Warm-up tick (allocations + internal state).
+        let snapshot = make_snapshot();
+        let started = Instant::now();
+        let decisions =
+            ifuyo_tide_lib::core::scheduler::compute(&snapshot, &Default::default(), &config);
+        let compute_us = started.elapsed().as_micros();
+        assert_eq!(decisions.len(), task_count);
+
+        // 20 ticks for a stable view.
+        let started = Instant::now();
+        for _ in 0..20 {
+            ifuyo_tide_lib::core::scheduler::compute(
+                &make_snapshot(),
+                &Default::default(),
+                &config,
+            );
+        }
+        let per_tick = started.elapsed() / 20;
+        println!(
+            "{task_count:>5} tasks: compute {compute_us} µs (first), {per_tick:?} / tick (avg of 20)"
+        );
+
+        // Demands stress: 5000 demands through the M4 registry.
+        let sched = ifuyo_tide_lib::core::scheduler::config::SchedulerConfig::default();
+        let _ = sched;
+        let registry = ifuyo_tide_lib::core::streaming::demand::DemandScheduler::new();
+        let started = Instant::now();
+        for i in 0..5000u64 {
+            let range =
+                ifuyo_tide_lib::core::resource::ByteRange::new(i * 4096, i * 4096 + 4096).unwrap();
+            registry.submit(
+                &format!("task-{}", i % task_count as u64),
+                range,
+                ifuyo_tide_lib::core::streaming::demand::DemandReason::BackgroundDownload,
+                None,
+            );
+        }
+        println!(
+            "5000 demand submissions: {} µs total",
+            started.elapsed().as_micros()
+        );
+    }
+}
+
+// ---------------------------------------------------------------------
+// §132: idempotency — re-reported seeks / pause / resume produce no
+// duplicate demands and no state corruption (M4 registry level).
+// ---------------------------------------------------------------------
+
+#[test]
+fn seek_and_pause_reports_are_idempotent() {
+    let registry = ifuyo_tide_lib::core::streaming::demand::DemandScheduler::new();
+    let range =
+        |start: u64| ifuyo_tide_lib::core::resource::ByteRange::new(start, start + 4096).unwrap();
+    // The M5/M7 seek flow: cancel_resource drops ALL old demands for
+    // the resource, THEN the new demand is submitted. Re-reporting the
+    // same seek merges (§132) — never two identical pending demands.
+    let _a = registry.submit(
+        "s",
+        range(0),
+        ifuyo_tide_lib::core::streaming::demand::DemandReason::PlaybackSeek,
+        None,
+    );
+    registry.cancel_resource("s");
+    assert_eq!(registry.pending_count("s"), 0, "old demand gone");
+    let b1 = registry.submit(
+        "s",
+        range(8192),
+        ifuyo_tide_lib::core::streaming::demand::DemandReason::PlaybackSeek,
+        None,
+    );
+    let b2 = registry.submit(
+        "s",
+        range(8192),
+        ifuyo_tide_lib::core::streaming::demand::DemandReason::PlaybackSeek,
+        None,
+    );
+    assert_eq!(b1, b2, "§132: identical re-reported demand merges");
+    assert_eq!(registry.pending_count("s"), 1, "exactly one B demand");
+    assert_eq!(registry.next_for("s").unwrap().range.start(), 8192);
+}
+
+// ---------------------------------------------------------------------
+// §144/§146: lifecycle — vanished tasks lose scheduler state; ended
+// playback stops demanding.
+// ---------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn vanished_task_loses_all_runtime_state() {
+    // Direct runtime-state semantics: the tick's retain only keeps
+    // ids present in the snapshot. Simulate via a runtime with a
+    // provider whose task disappears.
+    use ifuyo_tide_lib::core::scheduler::runtime::SnapshotProvider;
+    struct VanishingProvider {
+        present: Arc<std::sync::atomic::AtomicBool>,
+        task_id: String,
+    }
+    impl SnapshotProvider for VanishingProvider {
+        fn collect(&self) -> SchedulerSnapshot {
+            let tasks = if self.present.load(std::sync::atomic::Ordering::Relaxed) {
+                vec![TaskView {
+                    task_id: self.task_id.clone(),
+                    engine: EngineKind::Http,
+                    state: TaskRunState::Running,
+                    user_priority: None,
+                    smoothed_bps: 0.0,
+                    waited_secs: 0,
+                }]
+            } else {
+                vec![]
+            };
+            SchedulerSnapshot {
+                now_ms: 1_000,
+                network: NetworkSnapshot::default(),
+                limits: GlobalLimits {
+                    bandwidth_bps: Some(10 * 1024 * 1024),
+                },
+                tasks,
+                playback: vec![],
+            }
+        }
+    }
+
+    let engine = engine();
+    let torrents = torrent_engine("vanish").await;
+    let present = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let provider = VanishingProvider {
+        present: present.clone(),
+        task_id: "t-vanish".into(),
+    };
+    let runtime = SchedulerRuntime::new(
+        SchedulerConfig::default(),
+        Box::new(provider),
+        engine,
+        torrents,
+    );
+    runtime.tick();
+    runtime.tick();
+    // Task vanishes; the snapshot no longer lists it — the tick must
+    // drop its stamps/rate/demands (§144). It then RE-APPEARS and is
+    // scheduled again from scratch (§129 restart semantics).
+    present.store(false, std::sync::atomic::Ordering::Relaxed);
+    let applied = runtime.tick();
+    assert!(applied.iter().all(|d| d.task_id != "t-vanish"));
+    present.store(true, std::sync::atomic::Ordering::Relaxed);
+    let applied = runtime.tick();
+    assert_eq!(applied.len(), 1, "re-registered task scheduled again");
+}
+
+// ---------------------------------------------------------------------
 // §12: the torrent session rate is set through the PUBLIC API.
 // ---------------------------------------------------------------------
 

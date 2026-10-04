@@ -153,7 +153,34 @@ pub struct SchedulerRuntime {
     last_states: Mutex<HashMap<String, PlaybackSchedulingState>>,
     trigger: AtomicBool,
     pub tick_interval: Duration,
+    /// §140: decision ring buffer — the LAST applied decisions, capped
+    /// (never unbounded history).
+    decision_ring: Mutex<std::collections::VecDeque<(i64, AllocationDecision)>>,
+    /// §141 metrics: counters + last tick latency.
+    metrics: Mutex<SchedulerMetricsState>,
 }
+
+/// §141: internal metrics — real counters, no telemetry upload.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulerMetrics {
+    pub tick_ms: u64,
+    pub ticks: u64,
+    pub active_tasks: u64,
+    pub active_playback: u64,
+    pub allocation_changes: u64,
+    pub seek_events: u64,
+    pub rebuffer_events: u64,
+}
+
+#[derive(Debug, Default)]
+struct SchedulerMetricsState {
+    tick_ms: u64,
+    ticks: u64,
+    allocation_changes: u64,
+}
+
+const DECISION_RING_CAP: usize = 256;
 
 impl SchedulerRuntime {
     #[allow(clippy::too_many_arguments)]
@@ -174,6 +201,8 @@ impl SchedulerRuntime {
             last_states: Mutex::new(HashMap::new()),
             trigger: AtomicBool::new(false),
             tick_interval: Duration::from_millis(500), // §18 low-frequency
+            decision_ring: Mutex::new(std::collections::VecDeque::new()),
+            metrics: Mutex::new(SchedulerMetricsState::default()),
         })
     }
 
@@ -250,6 +279,7 @@ impl SchedulerRuntime {
     /// §17/§55: one reconciliation pass. Returns the decisions APPLIED
     /// (the diff) — engines only hear about CHANGES.
     pub fn tick(&self) -> Vec<AllocationDecision> {
+        let tick_started = std::time::Instant::now();
         let config = self.config();
         let mut snapshot = self.provider.collect();
         let now = snapshot.now_ms;
@@ -334,12 +364,25 @@ impl SchedulerRuntime {
                 .last_alloc_ms
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
+            let mut rates = self
+                .last_rates
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
             for d in &decisions {
                 if d.allocated_bps > 0 {
                     stamps.insert(d.task_id.clone(), now);
                 }
             }
+            // §144: tasks/playback that vanished lose their stamps AND
+            // their last rate — no dangling references survive.
             stamps.retain(|id, _| {
+                snapshot.tasks.iter().any(|t| &t.task_id == id)
+                    || snapshot
+                        .playback
+                        .iter()
+                        .any(|v| v.task_id.as_deref() == Some(id))
+            });
+            rates.retain(|id, _| {
                 snapshot.tasks.iter().any(|t| &t.task_id == id)
                     || snapshot
                         .playback
@@ -348,7 +391,64 @@ impl SchedulerRuntime {
             });
         }
 
+        // §140: decision ring (capped) + §141 metrics (real counters).
+        {
+            let mut ring = self
+                .decision_ring
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            for d in &applied {
+                ring.push_back((now, d.clone()));
+            }
+            while ring.len() > DECISION_RING_CAP {
+                ring.pop_front();
+            }
+            let mut metrics = self.metrics.lock().unwrap_or_else(PoisonError::into_inner);
+            metrics.tick_ms = tick_started.elapsed().as_millis() as u64;
+            metrics.ticks += 1;
+            metrics.allocation_changes += applied.len() as u64;
+        }
+
         applied
+    }
+
+    /// §140/§141: the applied-decision ring (oldest first) + live
+    /// metrics. Real data only (§77).
+    pub fn observability(&self) -> (Vec<(i64, AllocationDecision)>, SchedulerMetrics) {
+        let ring = self
+            .decision_ring
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let state = self.metrics.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut metrics = SchedulerMetrics {
+            tick_ms: state.tick_ms,
+            ticks: state.ticks,
+            allocation_changes: state.allocation_changes,
+            ..SchedulerMetrics::default()
+        };
+        let snapshot = self.provider.collect();
+        metrics.active_tasks = snapshot
+            .tasks
+            .iter()
+            .filter(|t| t.state == TaskRunState::Running)
+            .count() as u64;
+        metrics.active_playback = snapshot.playback.len() as u64;
+        metrics.seek_events = snapshot
+            .playback
+            .iter()
+            .filter(|p| p.state == PlaybackSchedulingState::Seeking)
+            .count() as u64;
+        metrics.rebuffer_events = snapshot
+            .playback
+            .iter()
+            .filter(|p| {
+                matches!(
+                    p.state,
+                    PlaybackSchedulingState::LowBuffer | PlaybackSchedulingState::CriticalBuffer
+                )
+            })
+            .count() as u64;
+        (ring.iter().cloned().collect(), metrics)
     }
 
     /// §18/§49: the loop — low-frequency tick, immediate on trigger.
