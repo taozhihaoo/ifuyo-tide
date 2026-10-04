@@ -206,6 +206,26 @@ export function PlayerPage({
                   重试
                 </button>
               )}
+              {/* §33: unsupported media → offer the OS default player as
+                  the escape path (M8 opener capability already granted
+                  through the backend's validated reveal command). */}
+              {(error.kind === "UnsupportedMedia" || error.kind === "DecodeError") && (
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  title="Open this file with the Windows default player"
+                  onClick={() => {
+                    void import("../../features/library/libraryApi").then((m) =>
+                      // The library item id equals the playback owner for
+                      // library-sourced sessions; downloads keep playing
+                      // through Tide only.
+                      m.revealItem(session.sessionId, false).catch(() => {}),
+                    );
+                  }}
+                >
+                  Open in default app
+                </button>
+              )}
               <button type="button" className="btn btn-small btn-danger" onClick={() => void stop()}>
                 关闭播放器
               </button>
