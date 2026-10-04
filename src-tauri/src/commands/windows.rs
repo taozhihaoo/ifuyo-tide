@@ -77,6 +77,11 @@ pub fn windows_drain_launch_requests(
     app: tauri::AppHandle,
 ) -> Result<Vec<crate::platform::launch::LaunchRequest>, TideError> {
     use tauri::Manager;
-    let queue = app.state::<crate::platform::router::PendingLaunchQueue>();
-    Ok(queue.drain())
+    // The queue is shared with the single-instance plugin closure, so
+    // the managed type is Arc<PendingLaunchQueue> — Tauri state lookup
+    // matches by exact type; requesting the inner type panics at IPC
+    // time (a latent M8 defect that aborted real launches; found and
+    // fixed during M12 artifact self-testing, §60).
+    let queue = app.state::<std::sync::Arc<crate::platform::router::PendingLaunchQueue>>();
+    Ok(queue.inner().drain())
 }
