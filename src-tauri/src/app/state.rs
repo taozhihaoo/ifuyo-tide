@@ -33,6 +33,9 @@ pub struct AppState {
     pub user_priorities:
         Arc<Mutex<std::collections::HashMap<String, crate::core::scheduler::UserPriority>>>,
     pub global_bandwidth_bps: Arc<std::sync::atomic::AtomicU64>,
+    /// M8: Windows integration settings (§80) — re-read from the DB on
+    /// change; cheap clone for event handlers.
+    windows: Arc<std::sync::Mutex<crate::platform::settings::WindowsSettings>>,
 }
 
 impl AppState {
@@ -49,6 +52,7 @@ impl AppState {
             Mutex<std::collections::HashMap<String, crate::core::scheduler::UserPriority>>,
         >,
         global_bandwidth_bps: Arc<std::sync::atomic::AtomicU64>,
+        windows: crate::platform::settings::WindowsSettings,
     ) -> Self {
         AppState {
             db: Mutex::new(conn),
@@ -63,7 +67,30 @@ impl AppState {
             scheduler,
             user_priorities,
             global_bandwidth_bps,
+            windows: Arc::new(std::sync::Mutex::new(windows)),
         }
+    }
+
+    /// M8 §13.3: current Windows settings (clone out; event handlers
+    /// can't hold the DB lock).
+    pub fn windows_settings(&self) -> crate::platform::settings::WindowsSettings {
+        self.windows
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// M8 §80: updates and persists a settings change.
+    pub fn set_windows_settings(
+        &self,
+        settings: crate::platform::settings::WindowsSettings,
+    ) -> Result<(), TideError> {
+        self.with_conn(|conn| crate::platform::settings::store(conn, &settings))?;
+        *self
+            .windows
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = settings;
+        Ok(())
     }
 
     /// Runs `f` with a shared connection reference.

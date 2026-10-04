@@ -3,6 +3,8 @@ pub mod state;
 
 use crate::commands;
 use crate::diagnostics;
+use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 use crate::persistence;
 use state::AppState;
 
@@ -191,6 +193,14 @@ pub fn run() {
     );
     scheduler_runtime.spawn_loop();
     diagnostics::info("scheduler.started", &[]);
+    // M8 §80: load Windows-integration settings (separate short-lived
+    // connection; the app-state `conn` moves into AppState below).
+    let windows_settings = {
+        match rusqlite::Connection::open(&dirs.database_file) {
+            Ok(conn) => crate::platform::settings::load(&conn).unwrap_or_default(),
+            Err(_) => Default::default(),
+        }
+    };
     let app_state = AppState::new(
         conn,
         download_engine,
@@ -201,6 +211,7 @@ pub fn run() {
         scheduler_runtime,
         user_priorities,
         global_bandwidth_bps,
+        windows_settings,
     );
 
     // M7(上) §72: load persisted scheduler preferences (user priorities
@@ -210,10 +221,84 @@ pub fn run() {
     // M0.5 SPIKE: separate managed state for experiment infrastructure.
     let spike_state = crate::spike::state::SpikeState::default();
 
-    tauri::Builder::default()
+    // M8 §73 startup order: single instance FIRST (second launches are
+    // forwarded here and never reach the builder), then core state,
+    // then the Windows integrations. A launch request arriving before
+    // the frontend is ready goes to the pending queue (§74).
+    let pending_launches = std::sync::Arc::new(crate::platform::router::PendingLaunchQueue::new());
+
+    let builder = tauri::Builder::default()
+        // §8.1: single instance MUST be registered FIRST. The callback
+        // receives (&AppHandle, argv, cwd) on the SECOND process; the
+        // first process's app handle routes the request (§8.3).
+        .plugin(tauri_plugin_single_instance::init(
+            {
+                let pending_launches = pending_launches.clone();
+                move |app: &tauri::AppHandle, argv: Vec<String>, _cwd: String| {
+                // §57: forwarded args are UNTRUSTED — classify + validate.
+                let args: Vec<String> = argv.iter().skip(1).cloned().collect();
+                match crate::platform::launch::parse_args(&args) {
+                    Ok(requests) => {
+                        crate::platform::tray::activate_main_window(app);
+                        for request in requests {
+                            let _ = crate::platform::router::route_launch_request(
+                                app,
+                                &pending_launches,
+                                request,
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        crate::diagnostics::warn(
+                            "launch_request.rejected",
+                            &[("code", err.code())],
+                        );
+                        crate::platform::tray::activate_main_window(app);
+                    }
+                }
+                }
+            }),
+        )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(tauri_plugin_deep_link::init())
+        .manage(pending_launches.clone())
         .manage(app_state)
         .manage(spike_state)
+        .setup(move |app| {
+            // M8 §73: Windows integrations initialize AFTER core state;
+            // each one degrades independently (§72) — a tray/deep-link
+            // failure is a warning, never a startup failure.
+            if let Err(err) = crate::platform::tray::create_tray(&app.handle()) {
+                crate::diagnostics::warn("tray.failed", &[("code", err.code())]);
+            }
+            if let Err(err) = app.deep_link().register("tide") {
+                crate::diagnostics::warn("deeplink.register_failed", &[]);
+                let _ = err; // details stay out of user-facing logs
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // §13.3/§22.2: close-to-tray — closing the window hides it;
+            // the app keeps running in the tray (§14 window hidden ≠
+            // application stopped).
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let close_to_tray = window
+                    .app_handle()
+                    .try_state::<crate::app::state::AppState>()
+                    .map(|state| state.windows_settings().close_to_tray)
+                    .unwrap_or(false);
+                if close_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::app_info::get_app_info,
             commands::app_info::health_check,
