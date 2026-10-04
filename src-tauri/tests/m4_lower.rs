@@ -348,7 +348,7 @@ async fn critical_7_restart_recovers_resource_and_playback() {
         ifuyo_tide_lib::persistence::repositories::DownloadRepository::open(&db).expect("repo"),
     );
     let engine_b = DownloadEngine::new(repo_b.clone());
-    let outcomes = recover_all(&*repo_b, &engine_b).expect("recovery");
+    let outcomes = recover_all(&repo_b, &engine_b).expect("recovery");
     assert!(!outcomes.is_empty(), "the paused task must be recovered");
 
     // Availability reconstructed from the PHYSICAL part size (M2

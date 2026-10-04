@@ -173,7 +173,7 @@ fn uncovered_directory_is_never_marked_missing() {
         .apply_scan(
             &root.id,
             &[candidate(&canonical_covered, &root_dir)],
-            &[hidden_dir.clone()],
+            &[hidden_dir],
         )
         .unwrap();
     assert_eq!(added, 0);

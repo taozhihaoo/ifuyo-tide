@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn extension_extraction() {
         assert_eq!(extension_of("Movie.2023.mp4").as_deref(), Some("mp4"));
-        assert_eq!(extension_of("noext").is_none(), true);
+        assert!(extension_of("noext").is_none());
         assert_eq!(extension_of("archive.tar.gz").as_deref(), Some("gz"));
     }
 }

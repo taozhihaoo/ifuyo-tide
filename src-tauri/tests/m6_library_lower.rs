@@ -68,7 +68,7 @@ async fn task_lifecycle_never_touches_library() {
         .await
         .unwrap();
     let (canonical, size, _) = service.play_source(&item.id).unwrap();
-    let session = manager
+    let _session = manager
         .open(
             StreamingResource::File {
                 path: canonical,
@@ -574,10 +574,10 @@ fn fuzzed_paths_never_escape_containment() {
         let mut rel = PathBuf::new();
         for _ in 0..parts {
             match next() % 6 {
-                0 => rel.push("..".to_string()),
+                0 => rel.push(".."),
                 1 => rel.push(format!("dir{}", next() % 5)),
                 2 => rel.push(format!("real{}.mp4", next() % 3)),
-                3 => rel.push("CON".to_string()),
+                3 => rel.push("CON"),
                 4 => rel.push(format!("..{}", next() % 7)),
                 _ => rel.push(format!("n{}%2e%2e", next() % 7)),
             }

@@ -444,7 +444,7 @@ mod simulation {
 #[ignore = "benchmark: run explicitly to record numbers"]
 async fn bench_tick_at_scale() {
     let torrents = torrent_engine("bench").await;
-    let engine = engine();
+    let _engine = engine();
     let _ = &torrents; // tick benchmark is provider-driven; engines unused
     let config = SchedulerConfig::default();
 

@@ -72,7 +72,7 @@ async fn soak_long_running_stability() {
     let started = Instant::now();
     let mut iteration: u64 = 0;
     let mut last_report = Instant::now();
-    let mut report_interval = Duration::from_secs(10);
+    let report_interval = Duration::from_secs(10);
     let mut first_rss: Option<u64> = None;
     let mut max_rss: Option<u64> = None;
 
@@ -93,7 +93,7 @@ async fn soak_long_running_stability() {
         if let Err(err) = engine.resume(&id, None).await {
             println!("resume race (expected under churn): {err}");
         }
-        if iteration % 4 == 0 {
+        if iteration.is_multiple_of(4) {
             let _ = engine.delete(&id).await;
         }
         // Demand registry churn with cancel (§47 event-subscription /

@@ -71,7 +71,7 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), TideError> {
                 "pause-all" | "resume-all" => {
                     if let Some(state) = app.try_state::<crate::app::state::AppState>() {
                         let action = event.id().as_ref();
-                        let downloads: Vec<String> = {
+                        let ids: Vec<String> = {
                             let map = state.download_engine.list_sync();
                             map.iter()
                                 .filter(|s| {
@@ -83,14 +83,27 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), TideError> {
                                 .map(|s| s.request.download_id.clone())
                                 .collect()
                         };
-                        for id in downloads {
-                            if action == "pause-all" {
-                                let _ = state.download_engine.pause(&id);
-                            } else {
-                                let resume = state.download_engine.resume(&id, None);
-                                drop(resume); // fire-and-forget (§62 tray command)
+                        // §62: fire-and-forget through application commands —
+                        // pause/resume are async engine methods, so they run
+                        // on the async runtime; results are never surfaced
+                        // in the tray.
+                        let engine = state.download_engine.clone();
+                        let action_pause = action == "pause-all";
+                        tauri::async_runtime::spawn(async move {
+                            for id in ids {
+                                let result = if action_pause {
+                                    engine.pause(&id).await
+                                } else {
+                                    engine.resume(&id, None).await
+                                };
+                                if let Err(err) = result {
+                                    crate::diagnostics::warn(
+                                        "tray.bulk_action_failed",
+                                        &[("code", err.code())],
+                                    );
+                                }
                             }
-                        }
+                        });
                     }
                 }
                 "quit" => {

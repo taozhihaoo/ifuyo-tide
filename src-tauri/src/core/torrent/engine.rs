@@ -358,14 +358,14 @@ impl TorrentEngine {
     pub fn set_download_rate_bps(&self, bps: Option<u64>) {
         let capped = bps
             .and_then(|b| u32::try_from(b.min(u32::MAX as u64)).ok())
-            .and_then(|b| core::num::NonZeroU32::new(b));
+            .and_then(core::num::NonZeroU32::new);
         self.session.ratelimits.set_download_bps(capped);
     }
 
     /// M7(上) §41: the session's live download throughput (bytes/sec).
     pub fn live_download_bps(&self) -> u64 {
         let total = std::cell::Cell::new(0u64);
-        let _ = self.session.with_torrents(|torrents| {
+        self.session.with_torrents(|torrents| {
             for (_, torrent) in torrents {
                 if let Some(live) = &torrent.stats().live {
                     total.set(total.get() + live.download_speed.as_bytes());
