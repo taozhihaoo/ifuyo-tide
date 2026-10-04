@@ -7,6 +7,8 @@ import {
   type SchedulerSnapshotDto,
   type UserPriority,
 } from "../player/playbackApi";
+import { getWindowsSettings } from "../settings/windowsApi";
+import { notify } from "../settings/notify";
 import type { DownloadDto } from "./downloadApi";
 
 /**
@@ -52,6 +54,32 @@ export function DownloadsView({
         });
         return next;
       });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  // M8 §15: Windows notification on completion/failure — only when the
+  // user's setting allows; a notification failure never fails the task
+  // (§39). The download lifecycle itself is untouched.
+  useEffect(() => {
+    let unlisten: UnlistenLike | null = null;
+    void api.onDownloadProgress((event) => {
+      if (event.state === "completed" || event.state === "failed") {
+        void getWindowsSettings()
+          .then((settings) => {
+            const name = event.filename ?? "Download";
+            if (event.state === "completed" && settings.notifyDownloadCompleted) {
+              void notify("Download completed", name);
+            } else if (event.state === "failed" && settings.notifyDownloadFailed) {
+              void notify("Download failed", name);
+            }
+          })
+          .catch(() => {});
+      }
     }).then((fn) => {
       unlisten = fn;
     });

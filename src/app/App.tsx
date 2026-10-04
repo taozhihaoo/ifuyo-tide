@@ -11,6 +11,11 @@ import {
 } from "../features/player/playbackApi";
 import type { PlaybackSourceRequest } from "../features/player/playbackApi";
 import { SettingsView } from "../features/settings/SettingsView";
+import {
+  drainLaunchRequests,
+  onLaunchRequest,
+  type LaunchRequestKind,
+} from "../features/settings/windowsApi";
 import { SpikeView } from "../features/spike/SpikeView";
 import { DownloadsView } from "../features/tasks/DownloadsView";
 import { TorrentsView } from "../features/torrents/TorrentsView";
@@ -23,7 +28,22 @@ export default function App() {
   // playSource; the Player view renders it.
   const [session, setSession] = useState<PlaybackSessionInfo | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  // M8 §45/§46: external sources enter the Add-Source flow — a
+  // LaunchRequest is NOT a task; the user confirms before creation.
+  const [notice, setNotice] = useState<string | null>(null);
+  const [pendingSource, setPendingSource] = useState<{
+    kind: string;
+    value: string;
+  } | null>(null);
   const sessionRef = useRef<PlaybackSessionInfo | null>(null);
+
+  const intakeSource = useCallback((request: LaunchRequestKind) => {
+    if (request.kind === "focus") return;
+    const value = typeof request.value === "string" ? request.value : "";
+    if (!value) return;
+    setPendingSource({ kind: request.kind, value });
+    setView("downloads");
+  }, []);
 
   // M0.5 SPIKE: hands-free experiment mode jumps straight to the spike
   // view so the autorun sequence mounts and executes.
@@ -71,6 +91,57 @@ export default function App() {
     setSession(null);
   }, []);
 
+  // M8 §73/§74: requests that arrived BEFORE the frontend was ready are
+  // drained exactly once; live requests arrive via app://launch-request.
+  useEffect(() => {
+    drainLaunchRequests()
+      .then((requests) => {
+        for (const request of requests) intakeSource(request.kind);
+      })
+      .catch(() => {});
+    let unlisten: import("@tauri-apps/api/event").UnlistenFn | null = null;
+    onLaunchRequest(intakeSource)
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [intakeSource]);
+
+  const confirmSource = useCallback(async () => {
+    const source = pendingSource;
+    if (!source) return;
+    setPendingSource(null);
+    try {
+      if (source.kind === "open_http_url") {
+        const downloads = await import("../features/tasks/downloadApi");
+        const { downloadId } = await downloads.startDownload({
+          url: source.value,
+          allowPrivate: true,
+        });
+        setNotice("Download started (" + downloadId.slice(0, 8) + "\u2026).");
+        setView("downloads");
+      } else if (source.kind === "open_magnet" || source.kind === "open_torrent_file") {
+        const torrents = await import("../features/torrents/torrentApi");
+        const created = await torrents.createTorrentTask(
+          source.kind === "open_magnet"
+            ? { sourceKind: "magnet", magnetUri: source.value, destinationDir: "C:\\Users\\Gray\\Downloads" }
+            : { sourceKind: "torrent_file", torrentPath: source.value, destinationDir: "C:\\Users\\Gray\\Downloads" },
+        );
+        setNotice("Torrent added (" + created.id.slice(0, 8) + "\u2026).");
+        setView("torrents");
+      } else if (source.kind === "open_media_file") {
+        // Local media → Library intake (M6); playback via Library item.
+        setNotice("Media file received — open it from the Library after import.");
+        setView("library");
+      }
+    } catch (err) {
+      setPlaybackError(String(err));
+    }
+  }, [pendingSource]);
+
   return (
     <div className="app">
       <Sidebar active={view} onNavigate={setView} />
@@ -84,6 +155,18 @@ export default function App() {
         {playbackError && (
           <div className="banner banner-error" role="alert">
             {playbackError}
+          </div>
+        )}
+        {notice && <div className="banner banner-ok" role="status">{notice}</div>}
+        {pendingSource && (
+          <div className="banner banner-ok" role="status">
+            External source received.{" "}
+            <button type="button" className="btn btn-small" onClick={() => void confirmSource()}>
+              Add
+            </button>{" "}
+            <button type="button" className="btn btn-small" onClick={() => setPendingSource(null)}>
+              Dismiss
+            </button>
           </div>
         )}
 

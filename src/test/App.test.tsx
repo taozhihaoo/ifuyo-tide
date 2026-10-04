@@ -25,6 +25,11 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
 }));
 
+vi.mock("../features/settings/windowsApi", () => ({
+  drainLaunchRequests: vi.fn().mockResolvedValue([]),
+  onLaunchRequest: vi.fn().mockResolvedValue(() => {}),
+}));
+
 const listDownloadsMock = vi.mocked(api.listDownloads);
 const startDownloadMock = vi.mocked(api.startDownload);
 const onProgressMock = vi.mocked(api.onDownloadProgress);

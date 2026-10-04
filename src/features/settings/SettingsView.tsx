@@ -11,6 +11,14 @@ import {
   type LibraryRootDto,
 } from "../library/libraryApi";
 import { setGlobalBandwidthLimit } from "../player/playbackApi";
+import {
+  autostartDisable,
+  autostartEnable,
+  autostartIsEnabled,
+  getWindowsSettings,
+  setWindowsSettings,
+  type WindowsSettingsDto,
+} from "../settings/windowsApi";
 
 /**
  * Settings: the download directory (M0) and the M6(上) library
@@ -25,6 +33,8 @@ export function SettingsView() {
   const [appInfo, setAppInfo] = useState<AppInfoDto | null>(null);
   const [roots, setRoots] = useState<LibraryRootDto[]>([]);
   const [bandwidthInput, setBandwidthInput] = useState(0);
+  const [win, setWin] = useState<WindowsSettingsDto | null>(null);
+  const [autostart, setAutostart] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -33,6 +43,8 @@ export function SettingsView() {
         setDownloadDir(settings.downloadDir);
         setAppInfo(await getAppInfo());
         setRoots(await listRoots());
+        setWin(await getWindowsSettings());
+        setAutostart(await autostartIsEnabled());
       } catch (err) {
         setError(errorMessage(err));
       } finally {
@@ -166,6 +178,85 @@ export function SettingsView() {
           </div>
           <input type="checkbox" disabled aria-label="Start on boot" />
         </div>
+      </div>
+
+      <div className="settings-group">
+        <div className="settings-group-title">Windows (M8)</div>
+        {win && (
+          <>
+            <div className="setting-row">
+              <div className="setting-text">
+                <span className="setting-label">Start with Windows</span>
+                <span className="setting-help">Off by default (§16.1). Toggles the OS login registration.</span>
+              </div>
+              <input
+                type="checkbox"
+                aria-label="Start with Windows"
+                checked={autostart}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setAutostart(on);
+                  void (on ? autostartEnable() : autostartDisable())
+                    .then(() => setWin((w) => (w ? { ...w, autostartEnabled: on } : w)))
+                    .catch((err) => {
+                      setAutostart(!on);
+                      setError(errorMessage(err));
+                    });
+                }}
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-text">
+                <span className="setting-label">Close to tray</span>
+                <span className="setting-help">
+                  Closing the window hides Tide; downloads continue. Off = closing exits.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                aria-label="Close to tray"
+                checked={win.closeToTray}
+                onChange={(e) => {
+                  const next = { ...win, closeToTray: e.target.checked };
+                  setWin(next);
+                  void setWindowsSettings(next).catch((err) => {
+                    setError(errorMessage(err));
+                  });
+                }}
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-text">
+                <span className="setting-label">Notify: download completed</span>
+              </div>
+              <input
+                type="checkbox"
+                aria-label="Notify on download completed"
+                checked={win.notifyDownloadCompleted}
+                onChange={(e) => {
+                  const next = { ...win, notifyDownloadCompleted: e.target.checked };
+                  setWin(next);
+                  void setWindowsSettings(next).catch(() => {});
+                }}
+              />
+            </div>
+            <div className="setting-row">
+              <div className="setting-text">
+                <span className="setting-label">Notify: download failed</span>
+              </div>
+              <input
+                type="checkbox"
+                aria-label="Notify on download failed"
+                checked={win.notifyDownloadFailed}
+                onChange={(e) => {
+                  const next = { ...win, notifyDownloadFailed: e.target.checked };
+                  setWin(next);
+                  void setWindowsSettings(next).catch(() => {});
+                }}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="settings-group">
