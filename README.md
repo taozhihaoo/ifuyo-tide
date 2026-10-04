@@ -4,13 +4,12 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M6 — Local Library complete.**
-> Downloads and playback are one experience — and now finished
-> downloads and imported folders land in a real local library with
-> cancellable scanning, search/filter/sort at 100k-item scale
-> (benchmarked), reconciliation against the filesystem, and
-> one-click playback through the same gateway and player. See
-> `docs/M6-report.md`.
+> **Current status: M7(上) — Smart Scheduler core complete.**
+> A deterministic control-plane scheduler now allocates REAL
+> bandwidth: playback buffer health drives priority with hysteresis,
+> background downloads keep an anti-starvation floor, per-task
+> priorities and a global bandwidth cap are user-settable — all with
+> decomposable decision reasons. See `docs/M7-report.md`.
 
 ---
 
@@ -35,7 +34,7 @@ upload of your data.
 | M4 | Progressive streaming, Range gateway, demand scheduler | **done** — unified gateway, progressive play + seek validated |
 | M5 | Player | **done** — controller/state machine/UI, reload recovery, honest buffering |
 | M6 | Local media library | **done** — scanner/reconciler/imports/query UI, benchmarked at 100k |
-| M7 | Smart scheduler | planned |
+| M7 | Smart scheduler | **in progress** — upper half done: policy core, enforcement, IPC, debug UI |
 | M8 | Windows integration | planned |
 | M9 | Product polish | planned |
 | M10–M12 | Security hardening, RC, 1.0 | planned |
