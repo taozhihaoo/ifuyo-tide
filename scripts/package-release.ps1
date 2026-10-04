@@ -12,7 +12,7 @@
 # personal artifacts tracked or shipped).
 
 param(
-    [string]$Version = "0.2.0-rc.1",
+    [string]$Version = "1.0.0",
     [string]$OutDir = "release",
     [string]$CargoPath = "$env:USERPROFILE\.cargo\bin\cargo.exe"
 )
