@@ -52,7 +52,7 @@ export interface ScanProgressDto {
   added: number;
   missing: number;
   errors: number;
-  status: "running" | "ok" | "partial" | "failed";
+  status: "running" | "ok" | "partial" | "failed" | "cancelled";
 }
 
 export function listRoots(): Promise<LibraryRootDto[]> {
@@ -76,6 +76,12 @@ export function setRootEnabled(rootId: string, enabled: boolean): Promise<void> 
 /** Starts a background scan; progress arrives via onScanProgress. */
 export function scan(rootId?: string): Promise<void> {
   return call<void>("library_scan", { rootId: rootId ?? null });
+}
+
+/** §130: requests cancellation of the root's running scan — the scan
+ * commits nothing and the root returns to idle. */
+export function cancelScan(rootId: string): Promise<boolean> {
+  return call<boolean>("library_cancel_scan", { rootId });
 }
 
 export function listItems(query: ItemQueryInput): Promise<ItemPageDto> {

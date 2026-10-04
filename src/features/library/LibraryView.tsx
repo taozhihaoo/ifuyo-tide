@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { EmptyState } from "../../components/EmptyState";
 import {
+  cancelScan,
   deleteItem,
   listItems,
   listRoots,
@@ -91,9 +92,11 @@ export function LibraryView({
       if (progress.status !== "running") {
         setScanning(false);
         setNotice(
-          `Scan ${progress.status}: ${progress.filesSeen} files, +${progress.added} added, ${progress.missing} missing${
-            progress.errors > 0 ? `, ${progress.errors} errors` : ""
-          }.`,
+          progress.status === "cancelled"
+            ? "Scan cancelled — the index is unchanged."
+            : `Scan ${progress.status}: ${progress.filesSeen} files, +${progress.added} added, ${progress.missing} missing${
+                progress.errors > 0 ? `, ${progress.errors} errors` : ""
+              }.`,
         );
         void refresh();
       }
@@ -153,6 +156,16 @@ export function LibraryView({
         >
           {scanning ? "Scanning…" : "Scan"}
         </button>
+        {scanning && scanProgress && (
+          <button
+            type="button"
+            className="btn btn-small btn-danger"
+            aria-label="Cancel scan"
+            onClick={() => void cancelScan(scanProgress.rootId).catch(() => {})}
+          >
+            Cancel
+          </button>
+        )}
       </div>
 
       {error && <div className="banner banner-error" role="alert">{error}</div>}
