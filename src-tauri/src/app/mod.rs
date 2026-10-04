@@ -272,7 +272,7 @@ pub fn run() {
             // M8 §73: Windows integrations initialize AFTER core state;
             // each one degrades independently (§72) — a tray/deep-link
             // failure is a warning, never a startup failure.
-            if let Err(err) = crate::platform::tray::create_tray(&app.handle()) {
+            if let Err(err) = crate::platform::tray::create_tray(app.handle()) {
                 crate::diagnostics::warn("tray.failed", &[("code", err.code())]);
             }
             if let Err(err) = app.deep_link().register("tide") {

@@ -133,20 +133,23 @@ fn parse_tide_deeplink(rest: &str) -> Result<LaunchRequest, TideError> {
     if query.len() > MAX_INPUT_LEN {
         return Err(validation_error("deep link query exceeds maximum length"));
     }
-    for (key, value) in query.split('&').filter_map(|p| p.split_once('=')) {
-        match key {
-            "magnet" => {
-                let decoded = percent_decode(value)?;
-                return parse_argument(&decoded);
-            }
-            "url" => {
-                let decoded = percent_decode(value)?;
-                return parse_argument(&decoded);
-            }
-            _ => return Err(validation_error("unknown deep link parameter")),
-        }
+    // §10.3: exactly ONE parameter is accepted — unknown keys, missing
+    // values and extra parameters are all rejected (no silent drops).
+    let (key, value) = query
+        .split_once('=')
+        .ok_or_else(|| validation_error("deep link missing parameter"))?;
+    if query.contains('&') {
+        return Err(validation_error(
+            "multiple deep link parameters unsupported",
+        ));
     }
-    Err(validation_error("deep link missing parameter"))
+    match key {
+        "magnet" | "url" => {
+            let decoded = percent_decode(value)?;
+            parse_argument(&decoded)
+        }
+        _ => Err(validation_error("unknown deep link parameter")),
+    }
 }
 
 /// Percent-decoding with strict validation: malformed escapes are
@@ -157,9 +160,6 @@ fn percent_decode(value: &str) -> Result<String, TideError> {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' {
-            if i + 2 >= bytes.len() + 1 && i + 2 > bytes.len() - 1 {
-                return Err(validation_error("truncated percent escape"));
-            }
             if i + 2 >= bytes.len() {
                 return Err(validation_error("truncated percent escape"));
             }
@@ -211,7 +211,7 @@ pub fn parse_file_path(path: &Path) -> Result<LaunchRequest, TideError> {
                 kind: LaunchKind::OpenTorrentFile(canonical),
             })
         }
-        ext if is_media_extension(&ext) => Ok(LaunchRequest {
+        ext if is_media_extension(ext) => Ok(LaunchRequest {
             kind: LaunchKind::OpenMediaFile(canonical),
         }),
         _ => Err(validation_error("unsupported file type")),

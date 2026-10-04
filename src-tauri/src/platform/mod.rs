@@ -9,12 +9,12 @@
 //! to the same application commands the UI uses.
 //!
 //! Components:
-//! - `launch.rs`   LaunchRequest parsing + validation (untrusted input)
-//! - `router.rs`   pending-request queue + application routing
-//! - `tray.rs`     system tray (real-state projection only)
+//! - `launch.rs` LaunchRequest parsing + validation (untrusted input)
+//! - `router.rs` pending-request queue + application routing
+//! - `tray.rs` system tray (real-state projection only)
 //! - `settings.rs` Windows-integration settings (close-to-tray,
-//!                 notifications, autostart) — persisted via the
-//!                 existing settings KV (§80: no second store)
+//!   notifications, autostart) — persisted via the existing settings
+//!   KV (§80: no second store)
 //!
 //! Plugin notes (§66): official Tauri 2 plugins at the locked
 //! versions — single-instance MUST be registered FIRST (plugin doc

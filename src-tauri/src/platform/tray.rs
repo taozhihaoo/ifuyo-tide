@@ -87,7 +87,8 @@ pub fn create_tray(app: &tauri::AppHandle) -> Result<(), TideError> {
                             if action == "pause-all" {
                                 let _ = state.download_engine.pause(&id);
                             } else {
-                                let _ = state.download_engine.resume(&id, None);
+                                let resume = state.download_engine.resume(&id, None);
+                                drop(resume); // fire-and-forget (§62 tray command)
                             }
                         }
                     }
@@ -127,8 +128,7 @@ pub fn update_tray_state(
 ) -> Result<(), TideError> {
     if let Some(tray) = app.tray_by_id("tide-tray") {
         let tooltip = format!("Tide — downloading: {downloading}, playing: {playing}");
-        tray.set_tooltip(Some(tooltip))
-            .map_err(|err| tray_error(err))?;
+        tray.set_tooltip(Some(tooltip)).map_err(tray_error)?;
     }
     Ok(())
 }
