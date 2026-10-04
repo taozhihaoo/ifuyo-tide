@@ -742,3 +742,13 @@ button:focus-visible {
 .bandwidth-input {
   width: 90px;
 }
+
+.error-details {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.error-details summary {
+  cursor: pointer;
+  color: var(--text-dim, #999);
+}

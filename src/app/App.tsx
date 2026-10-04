@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar, type ViewId } from "../components/Sidebar";
+import { ViewErrorBoundary } from "../components/ViewErrorBoundary";
 import { LibraryView } from "../features/library/LibraryView";
 import { PlayerView } from "../features/player/PlayerView";
 import {
@@ -171,11 +172,23 @@ export default function App() {
         )}
 
         <main className="content">
-          {view === "downloads" && <DownloadsView onPlay={playSource} />}
-          {view === "torrents" && <TorrentsView onPlay={playSource} />}
-          {view === "library" && <LibraryView onPlay={playSource} />}
-          {view === "player" && <PlayerView session={session} onClose={closeSession} />}
-          {view === "settings" && <SettingsView />}
+          <ViewErrorBoundary viewName="Downloads">
+            {view === "downloads" && <DownloadsView onPlay={playSource} />}
+          </ViewErrorBoundary>
+          <ViewErrorBoundary viewName="Torrents">
+            {view === "torrents" && <TorrentsView onPlay={playSource} />}
+          </ViewErrorBoundary>
+          <ViewErrorBoundary viewName="Library">
+            {view === "library" && <LibraryView onPlay={playSource} />}
+          </ViewErrorBoundary>
+          <ViewErrorBoundary viewName="Player">
+            {view === "player" && (
+              <PlayerView session={session} onClose={closeSession} />
+            )}
+          </ViewErrorBoundary>
+          <ViewErrorBoundary viewName="Settings">
+            {view === "settings" && <SettingsView />}
+          </ViewErrorBoundary>
           {view === "spike" && <SpikeView />}
         </main>
       </div>

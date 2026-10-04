@@ -9,6 +9,12 @@ import {
 } from "../player/playbackApi";
 import { getWindowsSettings } from "../settings/windowsApi";
 import { notify } from "../settings/notify";
+import {
+  describeDownloadError,
+  formatBytes as sharedFormatBytes,
+  formatEta as sharedFormatEta,
+  formatSpeed as sharedFormatSpeed,
+} from "../../lib/format";
 import type { DownloadDto } from "./downloadApi";
 
 /**
@@ -265,9 +271,13 @@ function DownloadCard({
           <span>{d.phase}</span>
         </div>
       </div>
-      {d.errorMessage && (
+      {d.state === "failed" && d.errorCode && (
         <div className="dim" role="alert">
-          {d.errorMessage} ({d.errorCode})
+          {describeDownloadError(d.errorCode).message} — {describeDownloadError(d.errorCode).recovery}
+          <details className="error-details">
+            <summary>Technical details</summary>
+            {d.errorMessage} ({d.errorCode})
+          </details>
         </div>
       )}
       <div className="task-actions">
@@ -350,20 +360,7 @@ function DownloadCard({
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-function formatSpeed(bps: number): string {
-  if (bps <= 0) return "—";
-  return `${formatBytes(bps)}/s`;
-}
-
-function formatEta(secs: number): string {
-  if (secs < 60) return `${secs}s`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`;
-  return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
-}
+// M9(上) §11/§12/§60: formatting moved to the shared lib (lib/format).
+const formatBytes = (bytes: number) => sharedFormatBytes(bytes);
+const formatSpeed = (bps: number) => sharedFormatSpeed(bps);
+const formatEta = (secs: number) => sharedFormatEta(secs);
