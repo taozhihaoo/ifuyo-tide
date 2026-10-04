@@ -18,10 +18,24 @@ use std::path::{Component, Path, PathBuf};
 /// `.`/`..` and separators), or a structured error when the path does
 /// not exist or cannot be resolved.
 pub fn canonicalize(path: &Path) -> Result<PathBuf, TideError> {
-    std::fs::canonicalize(path)
-        .map_err(|err| crate::error::TideError::Streaming(crate::error::StreamingFailure::Resource(
-            format!("path could not be resolved ({})", io_error_kind(&err)),
+    let canonical = std::fs::canonicalize(path).map_err(|err| {
+        crate::error::TideError::Streaming(crate::error::StreamingFailure::Resource(format!(
+            "path could not be resolved ({})",
+            io_error_kind(&err)
         )))
+    })?;
+    // Windows: fs::canonicalize returns a \\?\ VERBATIM path, which
+    // then compares UNEQUAL to every plain path (env vars, user input,
+    // recorded roots). Strip the prefix so canonical paths stay
+    // comparable; the UNC form keeps its //server/share shape.
+    let text = canonical.as_os_str().to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return Ok(PathBuf::from(format!(r"\\{rest}")));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        return Ok(PathBuf::from(rest.to_string()));
+    }
+    Ok(canonical)
 }
 
 fn io_error_kind(err: &std::io::Error) -> &'static str {
@@ -123,17 +137,17 @@ fn is_drive_root(path: &Path) -> bool {
 /// Windows reserved device names (§12): CON PRN AUX NUL COM1-9 LPT1-9,
 /// including with an extension ("CON.txt" is reserved too).
 pub fn has_reserved_device_name(path: &Path) -> bool {
-    let Some(name) = path.file_name() else { return false };
+    let Some(name) = path.file_name() else {
+        return false;
+    };
     let name = name.to_string_lossy();
     let stem = name.split('.').next().unwrap_or_default();
     let upper = stem.to_ascii_uppercase();
-    matches!(
-        upper.as_str(),
-        "CON" | "PRN" | "AUX" | "NUL"
-    ) || (upper.starts_with("COM")
-        && upper.len() <= 4
-        && upper[3..].chars().all(|c| c.is_ascii_digit())
-        && upper.len() > 3)
+    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (upper.starts_with("COM")
+            && upper.len() <= 4
+            && upper[3..].chars().all(|c| c.is_ascii_digit())
+            && upper.len() > 3)
         || (upper.starts_with("LPT")
             && upper.len() <= 4
             && upper[3..].chars().all(|c| c.is_ascii_digit())
@@ -173,6 +187,17 @@ pub fn is_reparse_point(metadata: &std::fs::Metadata) -> bool {
     {
         metadata.is_symlink()
     }
+}
+
+/// Same-path check (case-insensitive, component-wise) — used to
+/// detect that canonicalization MOVED a path (junction/symlink).
+pub fn same_path(a: &Path, b: &Path) -> bool {
+    let a: Vec<String> = a.components().map(|c| component_text(&c)).collect();
+    let b: Vec<String> = b.components().map(|c| component_text(&c)).collect();
+    a.len() == b.len()
+        && a.iter()
+            .zip(b.iter())
+            .all(|(x, y)| x.eq_ignore_ascii_case(y))
 }
 
 /// Relative path of `item` under `root`, forward-slash normalized for
@@ -225,7 +250,9 @@ mod tests {
         let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
         let sys = PathBuf::from(system_root);
         assert!(is_protected_system_path(&sys.join("System32\\x.dll")));
-        assert!(!is_protected_system_path(&PathBuf::from("C:\\Users\\someone\\movie.mp4")));
+        assert!(!is_protected_system_path(&PathBuf::from(
+            "C:\\Users\\someone\\movie.mp4"
+        )));
     }
 
     #[test]

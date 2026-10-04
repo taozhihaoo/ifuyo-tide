@@ -71,9 +71,12 @@ pub fn scan_root_blocking(
                     // Root itself unreadable → abort WITHOUT any
                     // database write (§68: no scan coverage, no
                     // Missing verdicts).
-                    return Err(TideError::Streaming(crate::error::StreamingFailure::Resource(
-                        format!("library root could not be read ({})", err_kind(&err)),
-                    )));
+                    return Err(TideError::Streaming(
+                        crate::error::StreamingFailure::Resource(format!(
+                            "library root could not be read ({})",
+                            err_kind(&err)
+                        )),
+                    ));
                 }
                 errors += 1;
                 uncovered.push(dir);
@@ -91,9 +94,19 @@ pub fn scan_root_blocking(
             };
             if metadata.is_dir() {
                 // §12: never traverse reparse points — a junction could
-                // lead anywhere on the system. Recorded as uncovered so
-                // items inside it (if previously indexed) are safe.
-                if path::is_reparse_point(&metadata) {
+                // lead anywhere on the system. Checked via
+                // symlink_metadata: DirEntry::metadata may resolve the
+                // junction and drop the reparse attribute. Recorded as
+                // uncovered so previously indexed items inside stay
+                // safe.
+                // §12: never traverse links out of the root. Detection:
+                // modern Rust resolves junctions transparently, so the
+                // reparse attribute is unreliable — canonicalize instead
+                // and compare: a junction resolves to a DIFFERENT path.
+                let is_link = path::canonicalize(&entry.path())
+                    .map(|resolved| !path::same_path(&resolved, &entry.path()))
+                    .unwrap_or(true);
+                if is_link {
                     errors += 1;
                     uncovered.push(entry.path());
                 } else {
@@ -102,10 +115,18 @@ pub fn scan_root_blocking(
                 continue;
             }
             if !metadata.is_file() {
+                // Neither directory nor file: a reparse point (modern
+                // Rust reports junctions this way — no dir/file bit).
+                // Never traversed, never indexed (§12); recorded as
+                // uncovered so previously indexed items inside stay.
+                errors += 1;
+                uncovered.push(entry.path());
                 continue;
             }
             let file_path = entry.path();
-            let Some(name) = file_path.file_name() else { continue };
+            let Some(name) = file_path.file_name() else {
+                continue;
+            };
             let name = name.to_string_lossy().to_string();
             let extension = classifier::extension_of(&name);
             if let Some(ext) = &extension {
@@ -138,7 +159,11 @@ pub fn scan_root_blocking(
     progress(files_seen);
 
     let (added, missing) = repo.apply_scan(root_id, &candidates, &uncovered)?;
-    let status = if errors > 0 { ScanStatus::Partial } else { ScanStatus::Ok };
+    let status = if errors > 0 {
+        ScanStatus::Partial
+    } else {
+        ScanStatus::Ok
+    };
     Ok(ScanOutcome {
         status,
         files_seen,
@@ -160,10 +185,7 @@ fn err_kind(err: &std::io::Error) -> &'static str {
 /// Light startup verification (§71/§73): existence + metadata only —
 /// never hashing. Items whose file disappeared become Missing;
 /// reappearing files become Available again.
-pub fn verify_items_blocking(
-    items: &[(String, PathBuf)],
-    repo: &LibraryRepository,
-) -> u64 {
+pub fn verify_items_blocking(items: &[(String, PathBuf)], repo: &LibraryRepository) -> u64 {
     let mut changed = 0u64;
     for (id, canonical_path) in items {
         let status = match std::fs::metadata(canonical_path) {

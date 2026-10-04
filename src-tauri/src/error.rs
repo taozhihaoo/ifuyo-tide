@@ -105,10 +105,16 @@ impl TideError {
 }
 
 impl From<rusqlite::Error> for TideError {
-    fn from(_err: rusqlite::Error) -> Self {
+    fn from(err: rusqlite::Error) -> Self {
         // SQLite error details stay in backend logs; the frontend only
-        // receives the generic persistence code.
-        TideError::Persistence("database operation failed".to_string())
+        // receives the generic persistence code plus the numeric error
+        // code (no SQL text, no schema details).
+        let code = err
+            .sqlite_error_code()
+            .map(|c| format!("{:?}", c))
+            .unwrap_or_default();
+        eprintln!("SQLITE_ERR: {code}: {err}");
+        TideError::Persistence(format!("database operation failed ({code})"))
     }
 }
 

@@ -23,13 +23,11 @@ pub fn extension_of(file_name: &str) -> Option<String> {
 /// §17 categories. Library UIs present Video/Audio/Image as primary
 /// content; the rest stay indexable (§17).
 pub fn classify(extension: Option<&str>) -> MediaCategory {
-    match extension {
+    match extension.map(str::to_ascii_lowercase).as_deref() {
         Some(ext) => match ext {
             "mp4" | "m4v" | "mkv" | "webm" | "mov" | "avi" | "wmv" | "flv" | "ts" | "m2ts"
             | "mpg" | "mpeg" => MediaCategory::Video,
-            "mp3" | "m4a" | "flac" | "wav" | "ogg" | "opus" | "aac" | "wma" => {
-                MediaCategory::Audio
-            }
+            "mp3" | "m4a" | "flac" | "wav" | "ogg" | "opus" | "aac" | "wma" => MediaCategory::Audio,
             "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "avif" => MediaCategory::Image,
             "srt" | "ass" | "ssa" | "vtt" | "sub" => MediaCategory::Subtitle,
             "zip" | "7z" | "rar" | "tar" | "gz" => MediaCategory::Archive,

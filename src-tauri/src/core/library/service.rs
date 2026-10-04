@@ -103,7 +103,8 @@ impl LibraryService {
         if !root.enabled {
             return Err(streaming_err("library root is disabled"));
         }
-        self.repo.update_root_scan_status(root_id, "scanning", None)?;
+        self.repo
+            .update_root_scan_status(root_id, "scanning", None)?;
         match scanner::scan_root_blocking(root_id, &root.path, self.repo(), &mut progress) {
             Ok(outcome) => {
                 self.repo.update_root_scan_status(
@@ -121,7 +122,8 @@ impl LibraryService {
                 Ok(outcome)
             }
             Err(err) => {
-                self.repo.update_root_scan_status(root_id, "failed", Some(now_ms()))?;
+                self.repo
+                    .update_root_scan_status(root_id, "failed", Some(now_ms()))?;
                 Err(err)
             }
         }
@@ -316,15 +318,13 @@ impl LibraryService {
             Ok(meta) if meta.is_file() => {
                 if meta.len() != item.size_bytes {
                     // External modification (§49): re-validate metadata.
-                    let _ = self.repo.set_item_availability(
-                        id,
-                        super::model::AvailabilityStatus::Available,
-                    );
+                    let _ = self
+                        .repo
+                        .set_item_availability(id, super::model::AvailabilityStatus::Available);
                 }
-                let _ = self.repo.set_item_availability(
-                    id,
-                    super::model::AvailabilityStatus::Available,
-                );
+                let _ = self
+                    .repo
+                    .set_item_availability(id, super::model::AvailabilityStatus::Available);
             }
             Ok(_) => {
                 let _ = self
@@ -332,8 +332,9 @@ impl LibraryService {
                     .set_item_availability(id, super::model::AvailabilityStatus::Inaccessible);
             }
             Err(_) => {
-                let _ =
-                    self.repo.set_item_availability(id, super::model::AvailabilityStatus::Missing);
+                let _ = self
+                    .repo
+                    .set_item_availability(id, super::model::AvailabilityStatus::Missing);
             }
         }
         self.repo
@@ -355,22 +356,18 @@ impl LibraryService {
         }
         let canonical = path::canonicalize(&item.canonical_path)?;
         if !canonical.is_file() {
-            let _ = self.repo.set_item_availability(
-                item_id,
-                super::model::AvailabilityStatus::Missing,
-            );
+            let _ = self
+                .repo
+                .set_item_availability(item_id, super::model::AvailabilityStatus::Missing);
             return Err(streaming_err("the file behind this library item is gone"));
         }
         // Containment against the item's CURRENT root (§48).
         if let Some(root) = self.repo.get_root(&item.root_id)? {
             if !path::is_contained(&root.path, &canonical) {
-                return Err(TideError::Security(
-                    "library item escaped its root".into(),
-                ));
+                return Err(TideError::Security("library item escaped its root".into()));
             }
         }
-        if path::has_reserved_device_name(&canonical)
-            || path::is_protected_system_path(&canonical)
+        if path::has_reserved_device_name(&canonical) || path::is_protected_system_path(&canonical)
         {
             return Err(TideError::Security("protected system file".into()));
         }
@@ -378,16 +375,11 @@ impl LibraryService {
         let metadata = std::fs::metadata(&canonical)?;
         if metadata.len() != item.size_bytes {
             crate::diagnostics::warn("library.item_stale", &[]);
-            let _ = self.repo.set_item_availability(
-                item_id,
-                super::model::AvailabilityStatus::Available,
-            );
+            let _ = self
+                .repo
+                .set_item_availability(item_id, super::model::AvailabilityStatus::Available);
         }
-        Ok((
-            canonical,
-            metadata.len(),
-            item.display_name.clone(),
-        ))
+        Ok((canonical, metadata.len(), item.display_name.clone()))
     }
 
     /// §24: remove the INDEX entry only — the file stays.
@@ -415,12 +407,9 @@ impl LibraryService {
             .get_root(&item.root_id)?
             .ok_or_else(|| streaming_err("the item's root no longer exists"))?;
         if !path::is_contained(&root.path, &canonical) {
-            return Err(TideError::Security(
-                "library item escaped its root".into(),
-            ));
+            return Err(TideError::Security("library item escaped its root".into()));
         }
-        if path::is_protected_system_path(&canonical)
-            || path::has_reserved_device_name(&canonical)
+        if path::is_protected_system_path(&canonical) || path::has_reserved_device_name(&canonical)
         {
             return Err(TideError::Security("protected system file".into()));
         }

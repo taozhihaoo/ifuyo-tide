@@ -55,7 +55,9 @@ impl LibraryRepository {
     }
 
     fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.conn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     // ----- roots --------------------------------------------------------
@@ -174,6 +176,20 @@ impl LibraryRepository {
         for c in candidates {
             let path_str = c.canonical_path.to_string_lossy();
             let id = crate::core::ids::new_id();
+            // Existence is checked BEFORE the upsert: after it, the
+            // just-written row would always count as "existing", and
+            // same-millisecond scans would defeat a created_at
+            // comparison.
+            let exists_before = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM library_items WHERE root_id = ?1 AND canonical_path = ?2",
+                    params![root_id, path_str],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap_or(0);
+            if exists_before == 0 {
+                added += 1;
+            }
             tx.execute(
                 "INSERT INTO library_items (
                     id, root_id, canonical_path, relative_path, display_name, extension,
@@ -206,19 +222,10 @@ impl LibraryRepository {
                     now,
                 ],
             )?;
-            // changes() is 1 for insert, 1 for update — distinguish via
-            // a cheap existence check instead (idempotency counts).
-            let exists_before = tx
-                .query_row(
-                    "SELECT COUNT(*) FROM library_items WHERE root_id = ?1 AND canonical_path = ?2 AND created_at < ?3",
-                    params![root_id, path_str, now],
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap_or(0);
-            if exists_before == 0 {
-                added += 1;
-            }
-            tx.execute("INSERT OR IGNORE INTO scan_seen (path) VALUES (?1)", params![path_str])?;
+            tx.execute(
+                "INSERT OR IGNORE INTO scan_seen (path) VALUES (?1)",
+                params![path_str],
+            )?;
         }
 
         // Missing marking, excluding uncovered prefixes (§69): only
@@ -239,20 +246,24 @@ impl LibraryRepository {
                  AND canonical_path NOT IN (SELECT path FROM scan_seen)",
             );
             for i in 0..uncovered_prefixes.len() {
-                sql.push_str(&format!(" AND canonical_path NOT LIKE ?{} ESCAPE '\\'", i + 3));
+                sql.push_str(&format!(
+                    " AND canonical_path NOT LIKE ?{} ESCAPE '\\'",
+                    i + 3
+                ));
             }
             let mut stmt = tx.prepare(&sql)?;
             let mut all_params: Vec<Box<dyn rusqlite::ToSql>> =
                 vec![Box::new(root_id.to_string()), Box::new(now)];
             for prefix in uncovered_prefixes {
+                // LIKE wildcard is % (not GLOB's *): prefix + anything.
                 all_params.push(Box::new(format!(
-                    "{}*",
+                    "{}%",
                     escape_like(&prefix.to_string_lossy())
                 )));
             }
-            missing = stmt
-                .execute(rusqlite::params_from_iter(all_params.iter().map(|p| p.as_ref())))?
-                as u64;
+            missing = stmt.execute(rusqlite::params_from_iter(
+                all_params.iter().map(|p| p.as_ref()),
+            ))? as u64;
         }
 
         tx.execute("DELETE FROM scan_seen", [])?;
@@ -329,12 +340,18 @@ impl LibraryRepository {
         Ok(affected > 0)
     }
 
-    pub fn list_item_paths_of_root(&self, root_id: &str) -> Result<Vec<(String, PathBuf)>, TideError> {
+    pub fn list_item_paths_of_root(
+        &self,
+        root_id: &str,
+    ) -> Result<Vec<(String, PathBuf)>, TideError> {
         let conn = self.conn();
-        let mut stmt = conn
-            .prepare("SELECT id, canonical_path FROM library_items WHERE root_id = ?1")?;
+        let mut stmt =
+            conn.prepare("SELECT id, canonical_path FROM library_items WHERE root_id = ?1")?;
         let rows = stmt.query_map(params![root_id], |row| {
-            Ok((row.get::<_, String>(0)?, PathBuf::from(row.get::<_, String>(1)?)))
+            Ok((
+                row.get::<_, String>(0)?,
+                PathBuf::from(row.get::<_, String>(1)?),
+            ))
         })?;
         let mut out = Vec::new();
         for row in rows {
@@ -343,7 +360,25 @@ impl LibraryRepository {
         Ok(out)
     }
 
-    pub fn item_id_by_task_and_path(&self, task_id: &str, path: &Path) -> Result<Option<String>, TideError> {
+    pub fn get_item_by_path(
+        &self,
+        canonical_path: &Path,
+    ) -> Result<Option<LibraryItem>, TideError> {
+        Ok(self
+            .conn()
+            .query_row(
+                &item_select("WHERE i.canonical_path = ?1 COLLATE NOCASE"),
+                params![canonical_path.to_string_lossy()],
+                row_to_item,
+            )
+            .optional()?)
+    }
+
+    pub fn item_id_by_task_and_path(
+        &self,
+        task_id: &str,
+        path: &Path,
+    ) -> Result<Option<String>, TideError> {
         Ok(self
             .conn()
             .query_row(
@@ -373,7 +408,10 @@ impl LibraryRepository {
         }
         if let Some(availability) = &query.availability {
             params_vec.push(Box::new(availability.as_str().to_string()));
-            where_clause.push_str(&format!(" AND i.availability_status = ?{}", params_vec.len()));
+            where_clause.push_str(&format!(
+                " AND i.availability_status = ?{}",
+                params_vec.len()
+            ));
         }
         if let Some(origin) = &query.origin {
             params_vec.push(Box::new(origin.as_str().to_string()));
