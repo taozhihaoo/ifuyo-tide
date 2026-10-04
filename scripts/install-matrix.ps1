@@ -169,7 +169,8 @@ $db = Join-Path $DataRoot "ifuyo\Tide\database\tide.db"
 $backup = "$db.matrix-backup"
 Copy-Item $db $backup -Force
 $bytes = [System.IO.File]::ReadAllBytes($db)
-$bytes[0..15] = 0x44,0x45,0x41,0x44,0x42,0x45,0x45,0x46,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07
+[byte[]]$patch = 0x44,0x45,0x41,0x44,0x42,0x45,0x45,0x46,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07
+for ($i = 0; $i -lt 16; $i++) { $bytes[$i] = $patch[$i] }
 [System.IO.File]::WriteAllBytes($db, $bytes)
 $env:LOCALAPPDATA = $DataRoot
 $p = Start-Process -FilePath $exe3 -PassThru -WindowStyle Minimized -RedirectStandardError (Join-Path $DataRoot "stderr-corrupt.txt")
