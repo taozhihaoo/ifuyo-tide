@@ -373,12 +373,14 @@ async fn read_part_range(
                 .map_err(|err| TideError::Streaming(StreamingFailure::Range(err.to_string())))?;
             return read_file_range(path, local).await;
         };
-        let tail = read_origin_range(
-            &origin.url,
-            local_end,
-            (range.end() - local_end) as usize,
-        )
-        .await?;
+        // Read through ONLY what the local file could not provide —
+        // starting at the first byte of the requested range that is
+        // missing (a fully-beyond-frontier seek starts at range.start,
+        // a straddling one at the frontier).
+        let origin_start = range.start() + out.len() as u64;
+        let tail =
+            read_origin_range(&origin.url, origin_start, (range.end() - origin_start) as usize)
+                .await?;
         out.extend_from_slice(&tail);
     }
     debug_assert_eq!(out.len() as u64, range.length() as u64);
@@ -563,7 +565,11 @@ mod tests {
             loop {
                 let Ok((mut sock, _)) = listener.accept().await else { break };
                 tokio::spawn(async move {
-                    use tokio::io::AsyncWriteExt;
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    // Read the request first: closing with unread data
+                    // would RST the connection and mask the response.
+                    let mut buf = vec![0u8; 4096];
+                    let _ = sock.read(&mut buf).await;
                     let body = vec![0u8; 4096];
                     let head = format!(
                         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",

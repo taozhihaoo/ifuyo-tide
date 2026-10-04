@@ -89,7 +89,9 @@ impl DemandScheduler {
     }
 
     /// Submits a demand; dedupes by (resource_id, range, reason) — an
-    /// identical pending demand is merged (returns the existing id).
+    /// identical pending demand is merged (returns the existing id,
+    /// M4(下) §114 in-flight demand merge). An explicit priority
+    /// override bypasses the merge so a promoted demand is always new.
     pub fn submit(
         &self,
         resource_id: &str,
@@ -98,6 +100,17 @@ impl DemandScheduler {
         priority_override: Option<DemandPriority>,
     ) -> DemandId {
         let mut demands = self.lock();
+        if priority_override.is_none() {
+            for d in demands.values() {
+                if d.state == DemandState::Pending
+                    && d.resource_id == resource_id
+                    && d.range == range
+                    && d.reason == reason
+                {
+                    return d.id;
+                }
+            }
+        }
         let id = DemandId(self.next_id.fetch_add(1, Ordering::SeqCst) + 1);
         let priority = priority_override.unwrap_or_else(|| reason.default_priority());
         let demand = Demand {
@@ -113,13 +126,13 @@ impl DemandScheduler {
         id
     }
 
+    /// Cancels a demand. Terminal demands are REMOVED eagerly: the
+    /// scheduler is bookkeeping for in-flight work, and retaining
+    /// terminal entries would grow memory without bound on long
+    /// playback (M4(下) §95).
     pub fn cancel(&self, id: DemandId) -> bool {
         let mut demands = self.lock();
-        if let Some(d) = demands.get_mut(&id.0) {
-            d.state = DemandState::Cancelled;
-            return true;
-        }
-        false
+        demands.remove(&id.0).is_some()
     }
 
     /// Cancels all pending demands for a resource (obsolete demand,
@@ -127,12 +140,14 @@ impl DemandScheduler {
     pub fn cancel_resource(&self, resource_id: &str) -> usize {
         let mut cancelled = 0;
         let mut demands = self.lock();
-        for d in demands.values_mut() {
+        demands.retain(|_, d| {
             if d.resource_id == resource_id && d.state == DemandState::Pending {
-                d.state = DemandState::Cancelled;
                 cancelled += 1;
+                false
+            } else {
+                true
             }
-        }
+        });
         cancelled
     }
 
@@ -146,13 +161,10 @@ impl DemandScheduler {
         }
     }
 
+    /// Marks a demand satisfied; the entry is removed (see `cancel`).
     pub fn complete(&self, id: DemandId) -> bool {
         let mut demands = self.lock();
-        if let Some(d) = demands.get_mut(&id.0) {
-            d.state = DemandState::Satisfied;
-            return true;
-        }
-        false
+        demands.remove(&id.0).is_some()
     }
 
     /// The next pending demand to serve for a resource: highest priority,
@@ -221,6 +233,25 @@ mod tests {
         sched.reprioritize(buffer, DemandPriority::Critical);
         let next = sched.next_for("r").unwrap();
         assert_eq!(next.id, buffer, "older critical demand wins after reprioritize");
+    }
+
+    #[test]
+    fn identical_pending_demand_merges() {
+        let sched = DemandScheduler::new();
+        let a = sched.submit("r", range(0), DemandReason::PlaybackBuffer, None);
+        let b = sched.submit("r", range(0), DemandReason::PlaybackBuffer, None);
+        assert_eq!(a, b, "§114: in-flight demands merge, no duplicate fetch");
+        assert_eq!(sched.pending_count("r"), 1);
+        // A different range or reason is a separate demand.
+        let c = sched.submit("r", range(1024), DemandReason::PlaybackBuffer, None);
+        let d = sched.submit("r", range(0), DemandReason::PlaybackSeek, None);
+        assert_ne!(a, c);
+        assert_ne!(a, d);
+        assert_eq!(sched.pending_count("r"), 3);
+        // Completed demands no longer merge.
+        sched.complete(a);
+        let e = sched.submit("r", range(0), DemandReason::PlaybackBuffer, None);
+        assert_ne!(a, e);
     }
 
     #[test]

@@ -300,9 +300,9 @@ async fn unified_gateway_serves_file_http_and_torrent() {
         accept_ranges: true,
     };
     let sessions = [
-        playback.open(file_res, "application/octet-stream".into()).expect("open file"),
-        playback.open(http_res, "application/octet-stream".into()).expect("open http"),
-        playback.open(torrent_res, "application/octet-stream".into()).expect("open torrent"),
+        playback.open(file_res, "application/octet-stream".into(), None).expect("open file"),
+        playback.open(http_res, "application/octet-stream".into(), None).expect("open http"),
+        playback.open(torrent_res, "application/octet-stream".into(), None).expect("open torrent"),
     ];
     assert_eq!(playback.session_count(), 3);
     assert!(sessions.iter().all(|s| s.url.contains(&format!(":{port}/"))));
@@ -354,7 +354,7 @@ async fn gateway_security_matrix() {
     let playback = manager().await;
     let (_dir, resource) = file_resource(64 * 1024);
     let session = playback
-        .open(resource, "application/octet-stream".into())
+        .open(resource, "application/octet-stream".into(), None)
         .expect("open");
     let port = playback.gateway_port();
 
@@ -427,7 +427,7 @@ async fn gateway_security_matrix() {
 async fn range_head_and_full_semantics() {
     let playback = manager().await;
     let (_dir, resource) = file_resource(LEN);
-    let session = playback.open(resource, "application/octet-stream".into()).expect("open");
+    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
     let target = format!("/stream/{}", session.session_id);
 
     // Full GET.
@@ -472,7 +472,7 @@ async fn stop_revokes_gateway_and_cancels_demands() {
         PlaybackManager::new(scheduler.clone()).await.expect("manager"),
     );
     let (_dir, resource) = file_resource(64 * 1024);
-    let session = playback.open(resource, "application/octet-stream".into()).expect("open");
+    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
     let port = playback.gateway_port();
     let target = format!("/stream/{}", session.session_id);
 
@@ -512,7 +512,7 @@ async fn torrent_read_without_peers_is_bounded() {
         file_index: 0,
         len: LEN,
     };
-    let session = playback.open(resource, "application/octet-stream".into()).expect("open");
+    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
 
     let started = Instant::now();
     let r = http_request(
@@ -556,7 +556,7 @@ async fn torrent_read_waits_for_pieces_then_serves() {
         file_index: 0,
         len: LEN,
     };
-    let session = playback.open(resource, "application/octet-stream".into()).expect("open");
+    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
     let range = format!("bytes={}-{}", LEN - 65536, LEN - 1);
 
     let r = http_request(
@@ -582,7 +582,7 @@ async fn seek_cancels_stale_demands() {
         PlaybackManager::new(scheduler.clone()).await.expect("manager"),
     );
     let (_dir, resource) = file_resource(256 * 1024);
-    let session = playback.open(resource, "application/octet-stream".into()).expect("open");
+    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
     let id = session.session_id.as_str();
 
     let make_range = |start: u64| {
