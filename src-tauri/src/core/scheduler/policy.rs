@@ -562,7 +562,6 @@ mod tests {
             alloc_total(&decisions, "movie") >= 2 * 1024 * 1024,
             "emergency minimum"
         );
-        let bg = alloc_of(&decisions, "bg1");
         assert!(
             alloc_total(&decisions, "bg1") < alloc_total(&decisions, "movie"),
             "background must yield to low-buffer playback"
@@ -632,7 +631,6 @@ mod tests {
             &Default::default(),
             &config(),
         );
-        let bg = alloc_of(&decisions, "bg");
         assert!(
             alloc_total(&decisions, "bg") > 0,
             "healthy playback must release spare capacity"
@@ -654,13 +652,14 @@ mod tests {
             &Default::default(),
             &config(),
         );
-        let movie = alloc_of(&decisions, "torrent-movie");
-        let rest = alloc_of(&decisions, "torrent-rest");
         assert!(
             alloc_total(&decisions, "torrent-movie") > alloc_total(&decisions, "torrent-rest"),
             "played file first"
         );
-        assert_eq!(rest.priority_class, PriorityClass::Normal);
+        assert_eq!(
+            alloc_of(&decisions, "torrent-rest").priority_class,
+            PriorityClass::Normal
+        );
     }
 
     /// §21: aging lifts waiting background weight but stays capped.
@@ -838,7 +837,6 @@ mod tests {
             &Default::default(),
             &config(),
         );
-        let movie = alloc_of(&decisions, "movie");
         let high_d = alloc_of(&decisions, "high");
         assert!(
             alloc_total(&decisions, "movie") > alloc_total(&decisions, "high"),

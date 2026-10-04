@@ -227,7 +227,7 @@ pub fn run() {
     // the frontend is ready goes to the pending queue (§74).
     let pending_launches = std::sync::Arc::new(crate::platform::router::PendingLaunchQueue::new());
 
-    let builder = tauri::Builder::default()
+    tauri::Builder::default()
         // §8.1: single instance MUST be registered FIRST. The callback
         // receives (&AppHandle, argv, cwd) on the SECOND process; the
         // first process's app handle routes the request (§8.3).
