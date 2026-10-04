@@ -1,15 +1,19 @@
-# M4(上) Streaming Architecture
+# M4 Resource Architecture
 
-How the M4 upper half is put together: one readable-resource model, one
-demand scheduler, one range gateway, one playback manager — the same
-path for a finished file, an in-progress HTTP download and a torrent
-file (M4(上) §72/§74).
+How the streaming layer is put together: one readable-resource model,
+one demand scheduler, one range gateway, one playback manager — the
+same path for a finished file, an in-progress HTTP download (including
+its un-downloaded region), and a torrent file (M4(上) §72/§74).
+
+Companions: M4-availability (availability semantics), M4-demand,
+M4-stream-gateway, M4-playback, M4-http-progressive,
+M4-torrent-progressive, M4-adr, M4-security.
 
 ## Module map
 
 ```text
 core/streaming/
-├── resource.rs   StreamingResource: File / Torrent / Http
+├── resource.rs   StreamingResource: File / Part / Torrent / Http
 ├── demand.rs     Demand model + minimal priority scheduler
 ├── gateway.rs    THE loopback Range gateway (one per app)
 ├── playback.rs   PlaybackSession manager (owns the gateway)
@@ -28,9 +32,14 @@ The M0.5 spike documented that async-trait objects would need
 `async_trait` boxing for no benefit; M4(上) keeps the spike's enum
 shape, promoted to production:
 
-- **File** — a completed download's final file OR the `.part` of an
-  in-progress HTTP download. Reads use physical file size (M2
-  invariant: the durable file is the truth, never the DB number).
+- **File** — a completed download's final file or any authorized
+  local file. Reads use physical file size (M2 invariant: the durable
+  file is the truth, never the DB number).
+- **Part** — the `.part` of an IN-PROGRESS HTTP download: dynamic
+  durable length, event-driven frontier wait (durable-len watch fired
+  after every flushed chunk, M4(下) §112/§115), and origin
+  read-through for beyond-frontier seeks (M4(下) §127). Full model in
+  M4-http-progressive.md.
 - **Torrent** — resolved via `TorrentEngine` (Clone shares the librqbit
   `Arc<Session>`). Every `read_range` opens an INDEPENDENT
   `FileStream`: WebView2 issues concurrent range requests (head +

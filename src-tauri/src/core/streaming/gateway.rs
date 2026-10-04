@@ -115,8 +115,9 @@ pub struct StreamingGateway {
 impl StreamingGateway {
     /// Binds on a random loopback port (M4(上) §38/§39).
     pub async fn start(scheduler: Arc<DemandScheduler>) -> Result<StreamingGateway, TideError> {
-        let listener =
-            TcpListener::bind("127.0.0.1:0").await.map_err(|_| gateway_failure("bind failed"))?;
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|_| gateway_failure("bind failed"))?;
         let port = listener
             .local_addr()
             .map_err(|_| gateway_failure("local addr failed"))?
@@ -343,9 +344,8 @@ async fn serve(
     };
 
     let head_only = request.method == "HEAD";
-    let mut response = format!(
-        "HTTP/1.1 {status}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n"
-    );
+    let mut response =
+        format!("HTTP/1.1 {status}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n");
     if let Some(content_range) = &content_range {
         response.push_str(&format!("Content-Range: {content_range}\r\n"));
     }
@@ -375,8 +375,7 @@ async fn serve(
                 crate::core::streaming::demand::DemandReason::PlaybackBuffer,
                 None,
             );
-            let read =
-                tokio::time::timeout(read_timeout, resource.read_range(chunk_range));
+            let read = tokio::time::timeout(read_timeout, resource.read_range(chunk_range));
             tokio::pin!(read);
             // Wait for the chunk OR the session-closed signal — a
             // stopped session never waits out the full timeout.

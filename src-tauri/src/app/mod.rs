@@ -86,9 +86,8 @@ pub fn run() {
     }
     // M4(上): playback manager owns the ONE gateway + the demand
     // scheduler (playback beats background, M4(上) §71).
-    let demand_scheduler = std::sync::Arc::new(
-        crate::core::streaming::demand::DemandScheduler::default(),
-    );
+    let demand_scheduler =
+        std::sync::Arc::new(crate::core::streaming::demand::DemandScheduler::default());
     let playback = std::sync::Arc::new(
         tauri::async_runtime::block_on(crate::core::streaming::PlaybackManager::new(
             demand_scheduler,

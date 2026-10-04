@@ -21,7 +21,11 @@ framing, no web-framework surface area.
    else 403 (§57) — DNS-rebinding and cross-origin probing rejected.
 3. Token path filter: exactly one segment, no `/`, `\`, `:`, `%`, `..`
    — traversal, encoded traversal and UNC-ish shapes all 404 (§56).
-4. Unknown/expired token → 404, empty body.
+4. Unknown/expired/closed token → 404, empty body.
+5. Method not GET/HEAD → 405 + `Allow: GET, HEAD` (M4(下) §125).
+6. Resource gone (task deleted, torrent removed, file missing) → 503
+   BEFORE any headers are committed (§107's controlled failure); a
+   read failure after headers degrades to a bounded early close.
 
 ## Range semantics (§61/§62)
 
@@ -54,7 +58,8 @@ connection, like the M1 test server; WebView2 re-opens as needed.
 
 | Timeout | Value | Covers |
 |---|---|---|
-| resource wait / per-read | 120 s default (`set_read_timeout_ms` tunable) | torrent pieces that never arrive, dead HTTP origin — the read aborts, the connection closes early (bounded, structured abort) |
+| resource wait / per-read | 120 s default (`set_read_timeout_ms` tunable) | torrent pieces that never arrive, dead origin, `.part` frontier that never extends — the read aborts, the connection closes early (bounded, structured abort) |
+| session close | immediate | in-flight reads select on the per-session cancellation watch and abort promptly (§116/§137) |
 | session idle | 12 h TTL, reaped by `PlaybackManager::reap_expired` (§55) |
 | shutdown | gateway task stops on the watch signal at process exit |
 

@@ -64,10 +64,19 @@ sends paths, §59/§60):
   `--autoplay-policy=no-user-gesture-required` (wired in M0.5,
   `tauri.conf.json` additionalBrowserArgs).
 
-## Known M4(上) limits
+## M4(下) additions
 
-- No `LastAccessAt`/`CurrentRange` tracking yet (session struct is
-  minimal; reaping is creation-time-based, 12 h).
-- Playback-resumed-after-navigation restarts at 0 (the element reloads
-  the URL); acceptable for the minimal player, M5 owns the real
-  player UX.
+- Sessions carry an owner task id; task deletion invalidates its
+  sessions (§102).
+- Session DTO carries `capability` (§146/§147) and `availableBytes`
+  refreshed on `get_playback_info` (§149).
+- The player shows Browser-buffered and Backend-available as distinct
+  metrics and disables seeking honestly when the capability says no.
+
+## Known limits
+
+- No `LastAccessAt`/`CurrentRange` tracking (reaping is
+  creation-time-based, 12 h).
+- Playback-resumed-after-navigation restarts at 0 (the element
+  reloads the URL); acceptable for the minimal player, M5 owns the
+  real player UX.

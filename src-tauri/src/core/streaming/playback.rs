@@ -97,7 +97,10 @@ impl PlaybackManager {
             );
         crate::diagnostics::info(
             "playback.opened",
-            &[("session_id", &info.session_id), ("source", info.source_kind)],
+            &[
+                ("session_id", &info.session_id),
+                ("source", info.source_kind),
+            ],
         );
         Ok(info)
     }
@@ -123,10 +126,7 @@ impl PlaybackManager {
 
     pub fn close(&self, session_id: &str) -> bool {
         let removed = {
-            let mut sessions = self
-                .sessions
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
             sessions.remove(session_id).is_some()
         };
         // Revoke gateway access too: a stopped session URL must stop
@@ -135,10 +135,7 @@ impl PlaybackManager {
         self.gateway.remove_session(session_id);
         self.scheduler.cancel_resource(session_id);
         if removed {
-            crate::diagnostics::info(
-                "playback.closed",
-                &[("session_id", session_id)],
-            );
+            crate::diagnostics::info("playback.closed", &[("session_id", session_id)]);
         }
         removed
     }
@@ -147,10 +144,7 @@ impl PlaybackManager {
     /// opened so no session outlives its data.
     pub fn close_for_owner(&self, owner: &str) -> usize {
         let ids: Vec<String> = {
-            let sessions = self
-                .sessions
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
             sessions
                 .values()
                 .filter(|s| s.owner.as_deref() == Some(owner))
@@ -199,10 +193,7 @@ impl PlaybackManager {
     pub fn reap_expired(&self) -> usize {
         let now = crate::core::time::now_unix_ms() as u64;
         let expired: Vec<String> = {
-            let sessions = self
-                .sessions
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
             sessions
                 .values()
                 .filter(|s| s.info.created_at_ms + (SESSION_TTL.as_millis() as u64) < now)

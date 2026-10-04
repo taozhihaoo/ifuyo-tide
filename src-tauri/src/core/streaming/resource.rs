@@ -83,12 +83,14 @@ pub enum StreamingResource {
 impl StreamingResource {
     /// Declared total size (the number Range math is built on; M4(下)
     /// §108: known-size resources must serve exact Content-Length).
+    /// Not a collection: an `is_empty` predicate is meaningless here.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
         match self {
             StreamingResource::File { len, .. } => *len,
-            StreamingResource::Part { path, total_len, .. } => {
-                total_len.unwrap_or_else(|| physical_len(path))
-            }
+            StreamingResource::Part {
+                path, total_len, ..
+            } => total_len.unwrap_or_else(|| physical_len(path)),
             StreamingResource::Torrent { len, .. } => *len,
             StreamingResource::Http { len, .. } => *len,
         }
@@ -124,7 +126,9 @@ impl StreamingResource {
                 supports_progressive: true,
                 known_size: true,
             },
-            StreamingResource::Part { total_len, origin, .. } => PlaybackCapability {
+            StreamingResource::Part {
+                total_len, origin, ..
+            } => PlaybackCapability {
                 supports_range: true,
                 // Beyond-frontier access needs the origin read-through
                 // path; local-only parts can serve what exists.
@@ -153,7 +157,12 @@ impl StreamingResource {
         match self {
             StreamingResource::File { len, .. } => *len,
             StreamingResource::Part { path, .. } => physical_len(path),
-            StreamingResource::Torrent { engine, info_hash, len, .. } => {
+            StreamingResource::Torrent {
+                engine,
+                info_hash,
+                len,
+                ..
+            } => {
                 match engine.handle_for(info_hash) {
                     // Coarse global-progress approximation (librqbit
                     // reports contiguous download progress; per-file
@@ -190,7 +199,9 @@ impl StreamingResource {
                     }
                 }
             }
-            StreamingResource::Torrent { engine, info_hash, .. } => {
+            StreamingResource::Torrent {
+                engine, info_hash, ..
+            } => {
                 let Some(handle) = engine.handle_for(info_hash) else {
                     return Availability::Unknown;
                 };
@@ -214,7 +225,7 @@ impl StreamingResource {
     /// through the origin (§127/§145). Origin responses that ignore
     /// Range are an error — never silently served as wrong bytes.
     pub async fn read_range(&self, range: ByteRange) -> Result<Vec<u8>, TideError> {
-        if range.length() as u64 > MAX_READ_BYTES {
+        if range.length() > MAX_READ_BYTES {
             return Err(TideError::InvalidInput(format!(
                 "read of {} bytes exceeds the {MAX_READ_BYTES} byte cap",
                 range.length()
@@ -244,15 +255,11 @@ impl StreamingResource {
                         "torrent is not in the engine".into(),
                     ))
                 })?;
-                let mut stream = handle
-                    .clone()
-                    .stream(*file_index)
-                    .await
-                    .map_err(|err| {
-                        TideError::Streaming(StreamingFailure::Resource(format!(
-                            "torrent stream open failed: {err}"
-                        )))
-                    })?;
+                let mut stream = handle.clone().stream(*file_index).await.map_err(|err| {
+                    TideError::Streaming(StreamingFailure::Resource(format!(
+                        "torrent stream open failed: {err}"
+                    )))
+                })?;
                 stream
                     .seek(SeekFrom::Start(range.start()))
                     .await
@@ -264,9 +271,7 @@ impl StreamingResource {
                 let mut buf = vec![0u8; range.length() as usize];
                 let read = tokio::time::timeout(DEFAULT_READ_TIMEOUT, stream.read_exact(&mut buf))
                     .await
-                    .map_err(|_| {
-                        TideError::Streaming(StreamingFailure::WaitTimeout)
-                    })?
+                    .map_err(|_| TideError::Streaming(StreamingFailure::WaitTimeout))?
                     .map_err(|err| {
                         TideError::Streaming(StreamingFailure::Resource(format!(
                             "torrent read failed: {err}"
@@ -275,7 +280,9 @@ impl StreamingResource {
                 debug_assert_eq!(read, buf.len());
                 Ok(buf)
             }
-            StreamingResource::Http { url, accept_ranges, .. } => {
+            StreamingResource::Http {
+                url, accept_ranges, ..
+            } => {
                 if !accept_ranges {
                     return Err(TideError::Streaming(StreamingFailure::RangeUnsupported));
                 }
@@ -313,12 +320,14 @@ async fn wait_for_durable_len(
 }
 
 async fn read_file_range(path: &Path, range: ByteRange) -> Result<Vec<u8>, TideError> {
-    let mut file = tokio::fs::File::open(path).await.map_err(|_| {
-        TideError::Streaming(StreamingFailure::Resource("file disappeared".into()))
-    })?;
-    file.seek(SeekFrom::Start(range.start())).await.map_err(|err| {
-        TideError::Streaming(StreamingFailure::Resource(format!("seek failed: {err}")))
-    })?;
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|_| TideError::Streaming(StreamingFailure::Resource("file disappeared".into())))?;
+    file.seek(SeekFrom::Start(range.start()))
+        .await
+        .map_err(|err| {
+            TideError::Streaming(StreamingFailure::Resource(format!("seek failed: {err}")))
+        })?;
     let mut buf = vec![0u8; range.length() as usize];
     file.read_exact(&mut buf).await.map_err(|_| {
         TideError::Streaming(StreamingFailure::Resource(
@@ -378,12 +387,15 @@ async fn read_part_range(
         // missing (a fully-beyond-frontier seek starts at range.start,
         // a straddling one at the frontier).
         let origin_start = range.start() + out.len() as u64;
-        let tail =
-            read_origin_range(&origin.url, origin_start, (range.end() - origin_start) as usize)
-                .await?;
+        let tail = read_origin_range(
+            &origin.url,
+            origin_start,
+            (range.end() - origin_start) as usize,
+        )
+        .await?;
         out.extend_from_slice(&tail);
     }
-    debug_assert_eq!(out.len() as u64, range.length() as u64);
+    debug_assert_eq!(out.len() as u64, range.length());
     Ok(out)
 }
 
@@ -394,14 +406,12 @@ async fn read_part_range(
 /// start at offset 0, so serving it as `[start, start+len)` would be
 /// WRONG BYTES (P0 class). The read is stream-limited to exactly `len`
 /// bytes; a short body is a structured failure, not a short read.
-async fn read_origin_range(
-    url: &str,
-    start: u64,
-    len: usize,
-) -> Result<Vec<u8>, TideError> {
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|err| TideError::Streaming(StreamingFailure::Gateway(format!("client build failed: {err}"))))?;
+async fn read_origin_range(url: &str, start: u64, len: usize) -> Result<Vec<u8>, TideError> {
+    let client = reqwest::Client::builder().build().map_err(|err| {
+        TideError::Streaming(StreamingFailure::Gateway(format!(
+            "client build failed: {err}"
+        )))
+    })?;
     let range_end = start + len as u64 - 1; // HTTP inclusive
     let response = client
         .get(url)
@@ -414,10 +424,7 @@ async fn read_origin_range(
     let status = response.status();
     if status == reqwest::StatusCode::OK {
         // Origin ignored the Range header (M4(下) §145).
-        crate::diagnostics::warn(
-            "streaming.range_unsupported",
-            &[("status", "200")],
-        );
+        crate::diagnostics::warn("streaming.range_unsupported", &[("status", "200")]);
         return Err(TideError::Streaming(StreamingFailure::RangeUnsupported));
     }
     if !status.is_success() {
@@ -428,7 +435,11 @@ async fn read_origin_range(
     let mut out = Vec::with_capacity(len);
     let mut response = response;
     while out.len() < len {
-        match response.chunk().await.map_err(|err| classify_reqwest(&err))? {
+        match response
+            .chunk()
+            .await
+            .map_err(|err| classify_reqwest(&err))?
+        {
             Some(chunk) => {
                 let take = (len - out.len()).min(chunk.len());
                 out.extend_from_slice(&chunk[..take]);
@@ -515,7 +526,9 @@ mod tests {
         let server_payload = payload.clone();
         tokio::spawn(async move {
             loop {
-                let Ok((mut sock, _)) = listener.accept().await else { break };
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
+                };
                 let body = server_payload.clone();
                 tokio::spawn(async move {
                     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -563,7 +576,9 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             loop {
-                let Ok((mut sock, _)) = listener.accept().await else { break };
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
+                };
                 tokio::spawn(async move {
                     use tokio::io::{AsyncReadExt, AsyncWriteExt};
                     // Read the request first: closing with unread data

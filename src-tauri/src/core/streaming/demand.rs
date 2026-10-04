@@ -232,7 +232,10 @@ mod tests {
         assert_eq!(next.id, seek, "seek must win");
         sched.reprioritize(buffer, DemandPriority::Critical);
         let next = sched.next_for("r").unwrap();
-        assert_eq!(next.id, buffer, "older critical demand wins after reprioritize");
+        assert_eq!(
+            next.id, buffer,
+            "older critical demand wins after reprioritize"
+        );
     }
 
     #[test]

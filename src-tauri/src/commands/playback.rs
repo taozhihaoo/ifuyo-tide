@@ -80,7 +80,10 @@ async fn resolve_resource(
         PlaybackSourceRequest::DownloadTask { task_id } => {
             Ok(resolve_download(state, &task_id).map(|(r, n)| (r, n, Some(task_id)))?)
         }
-        PlaybackSourceRequest::TorrentFile { task_id, file_index } => {
+        PlaybackSourceRequest::TorrentFile {
+            task_id,
+            file_index,
+        } => {
             let (r, n) = resolve_torrent_file(state, &task_id, file_index).await?;
             Ok((r, n, Some(task_id)))
         }
@@ -114,9 +117,11 @@ fn resolve_download(
 
     // In progress / paused / interrupted: whatever is durably on disk.
     if !record.part_path.exists() {
-        return Err(TideError::Streaming(crate::error::StreamingFailure::Playback(
-            "nothing downloaded yet — start the task first".into(),
-        )));
+        return Err(TideError::Streaming(
+            crate::error::StreamingFailure::Playback(
+                "nothing downloaded yet — start the task first".into(),
+            ),
+        ));
     }
     // Live engine entry (if the task is restored) provides the
     // event-driven frontier signal.
@@ -169,9 +174,11 @@ async fn resolve_torrent_file(
             state.torrent_engine.resume(&handle).await?;
         }
     } else {
-        return Err(TideError::Streaming(crate::error::StreamingFailure::Resource(
-            "torrent is not in the engine — resume the task first".into(),
-        )));
+        return Err(TideError::Streaming(
+            crate::error::StreamingFailure::Resource(
+                "torrent is not in the engine — resume the task first".into(),
+            ),
+        ));
     }
 
     let name = file

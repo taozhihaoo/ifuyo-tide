@@ -20,9 +20,13 @@ Demand { id, resource_id, range, priority, reason, created_at, state }
 
 `next_for(resource)`: highest priority first, oldest first within a
 priority (oldest = `created_at`, a stand-in for "earliest deadline" —
-M4 has no deadlines yet). `submit` dedupes identical
-(resource, range, reason) entries. `cancel` / `cancel_resource` /
-`reprioritize` / `complete` round out the surface.
+M4 has no deadlines yet). `submit` MERGES identical pending
+(resource, range, reason) entries — the §114 in-flight demand merge;
+an explicit priority override bypasses the merge. `cancel` /
+`cancel_resource` / `reprioritize` / `complete` round out the surface.
+Terminal demands are removed EAGERLY (M4(下) §95): retaining them
+would grow memory without bound on long playback and turn the merge
+scan O(n²).
 
 ## Who uses it today
 
