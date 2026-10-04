@@ -1,0 +1,89 @@
+# Changelog
+
+All notable changes to ifuyo Tide. This project keeps an honest,
+capability-based changelog — no marketing language.
+
+## 1.0.0 — 2026-10-05
+
+First stable release. The M0–M11 feature set is frozen: M12 added no
+features; it fixed release blockers, re-validated install/upgrade/
+recovery/security behavior on real installers, and finalized the
+documentation and artifacts.
+
+### Added
+
+- HTTP/HTTPS downloader: pause/resume, bounded retry, ETag /
+  Last-Modified revalidation, SHA-256 checksum verification,
+  >4 GiB files validated.
+- Crash-safe persistence: transactional SQLite schema
+  (`PRAGMA user_version` migrations), `.part`-based resume where the
+  file is the source of truth, deterministic startup recovery.
+- BitTorrent downloads (librqbit): magnet and .torrent sources,
+  metadata fetch, per-file selection, pause/resume, restart
+  recovery, corrupted-piece redownload; Download-Only default
+  (uploads disabled).
+- Progressive streaming: watch while downloading — local loopback
+  Range gateway (random port, session token, host/range validation)
+  serving HTTP, torrent and file resources uniformly; seek into
+  not-yet-downloaded regions with demand-driven piece scheduling.
+- Player: WebView2-based playback with honest buffering states,
+  seek/volume/speed/fullscreen/keyboard controls, reload recovery
+  (backend session is the source of truth).
+- Local library: scan roots (junction-safe path handling), import on
+  download completion, query/filter/sort, refresh, reveal in
+  Explorer; benchmarked at 100k items.
+- Smart scheduler: deterministic four-phase allocation, streaming
+  demand prioritization (emergency/playback/seek), global and
+  per-task bandwidth limits, per-task priorities, observable metrics.
+- Windows integration: single instance, `tide://` deep links,
+  .torrent file association, tray (show/pause-all/resume-all/quit),
+  optional autostart, completion notifications, close-to-tray.
+- Settings: download directory, bandwidth, scheduler preferences,
+  Windows behaviors; persisted in SQLite.
+- Security hardening: minimal Tauri capabilities, CSP without
+  remote origins, SSRF defenses (scheme allow-list, private-address
+  classification, per-hop redirect re-validation), hostile-input
+  regression corpus, fail-closed debug surface (dev-only spike UI
+  and IPC).
+- Per-user NSIS installer (no admin rights), WebView2 bootstrapping,
+  SHA-256-summed release artifacts with a traceable build manifest
+  and dependency inventory.
+
+### Improved
+
+- Error UX: structured backend errors map to plain-language
+  messages with recovery actions; internals stay folded in
+  "Technical details".
+- Long-name/number formatting: middle truncation, sensible byte and
+  ETA formatting, zero-state "—" instead of fake zeros.
+- Reduced-motion support and double-submit guards.
+
+### Fixed
+
+- Release builds compile fail-closed stubs for all debug commands
+  (found and fixed during M11; E0308 in the stub macro).
+- M0.5 spike prototype surface (sidebar entry, autorun, view) is
+  now compiled out of release navigation (M12 blocker fix).
+
+### Security
+
+- No telemetry, no accounts, no cloud services, no update checks,
+  no hidden analytics (audited per milestone; see
+  `docs/M10-network-surface.md` and `docs/M11-security-regression.md`).
+
+### Known Limitations
+
+- Media support depends on the WebView2/Edge codec pack of the
+  host machine (H.264/AAC, VP9/Opus generally available; HEVC and
+  AV1 vary by environment — conditionally supported).
+- Installer is unsigned; SmartScreen will show an unknown-publisher
+  prompt (code signing pending certificate).
+- No built-in updater in 1.0; upgrade by running the new installer
+  over the old installation (data preserved).
+- BitTorrent rate limiting is per-session, not per-task.
+- DNS-rebinding validate→connect window is not pinned (documented;
+  low practical exposure).
+- Startup-failure reporting goes to stderr (invisible to the user
+  in release builds); data-safe but silent.
+
+See `KNOWN_ISSUES.md` for the full tracked list.
