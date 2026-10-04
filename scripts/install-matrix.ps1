@@ -53,6 +53,15 @@ function Installed-Exe {
 function Stop-AllTide {
     Get-Process ifuyo-tide -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
+    # reap tide-owned WebView2 children (user-data-folder lock guard)
+    $deadline = (Get-Date).AddSeconds(8)
+    while ((Get-Date) -lt $deadline) {
+        $wv = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -match 'ifuyo-tide|com\.ifuyo\.tide' })
+        if ($wv.Count -eq 0) { break }
+        foreach ($w in $wv) { Stop-Process -Id $w.ProcessId -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Milliseconds 500
+    }
 }
 
 function Inherit-Smoke([string]$name) {

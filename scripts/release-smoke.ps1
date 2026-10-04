@@ -97,6 +97,21 @@ function Stop-Tide([System.Diagnostics.Process]$p) {
         Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
     }
     $p.WaitForExit(10000) | Out-Null
+    # Reap tide-owned WebView2 children: lingering msedgewebview2 can
+    # hold the WebView2 user-data folder and fatally fail the NEXT
+    # launch (observed as a silent early exit in the reinstall matrix).
+    Stop-TideWebViews
+}
+
+function Stop-TideWebViews {
+    $deadline = (Get-Date).AddSeconds(8)
+    while ((Get-Date) -lt $deadline) {
+        $wv = @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -match 'ifuyo-tide|com\.ifuyo\.tide' })
+        if ($wv.Count -eq 0) { return }
+        foreach ($w in $wv) { Stop-Process -Id $w.ProcessId -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Milliseconds 500
+    }
 }
 
 # --- 3-5. cold launch: dirs, migrations, log health --------------------------
