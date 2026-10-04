@@ -309,10 +309,23 @@ pub fn compute(
         if already >= entries[i].target_bps || used_bps >= cap {
             continue;
         }
-        let want = (entries[i].target_bps - already).min(cap - used_bps);
+        // §31/§92: a CRITICAL/seek-stressed session keeps absorbing
+        // capacity beyond its target (up to a 4× stress ceiling) while
+        // background is left the remainder — "极低配额" is whatever the
+        // stressed session does not take.
+        let ceiling = if entries[i].class == PriorityClass::Emergency {
+            config.playback_target_bps.saturating_mul(4)
+        } else {
+            entries[i].target_bps
+        };
+        let want = (ceiling.saturating_sub(already)).min(cap - used_bps);
         used_bps += want;
         let reason = entries[i].reason.clone();
-        let detail = format!("{}, target allocation", entries[i].detail);
+        let detail = if want + already > entries[i].target_bps {
+            format!("{}, stressed escalation above target", entries[i].detail)
+        } else {
+            format!("{}, target allocation", entries[i].detail)
+        };
         push_decision(&entries, i, &mut allocated, want, &reason, &detail);
     }
 

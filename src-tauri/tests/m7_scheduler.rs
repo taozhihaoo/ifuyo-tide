@@ -197,6 +197,246 @@ async fn runtime_tick_diffs_and_applies_to_the_data_plane() {
 }
 
 // ---------------------------------------------------------------------
+// §115–§121: headless deterministic simulation — multiple ticks with
+// evolving buffers/caps, NO real network. The pure policy runs against
+// synthesized snapshots; states carry across ticks (hysteresis).
+// ---------------------------------------------------------------------
+#[cfg(test)]
+mod simulation {
+    use ifuyo_tide_lib::core::scheduler::model::{
+        AllocationDecision, EngineKind, GlobalLimits, NetworkSnapshot, PlaybackSchedulingState,
+        PlaybackView, ReasonCode, SchedulerSnapshot, TaskRunState, TaskView,
+    };
+    use ifuyo_tide_lib::core::scheduler::policy;
+    use ifuyo_tide_lib::core::scheduler::SchedulerConfig;
+
+    const MIB: u64 = 1024 * 1024;
+
+    fn task(id: &str) -> TaskView {
+        TaskView {
+            task_id: id.into(),
+            engine: EngineKind::Http,
+            state: TaskRunState::Running,
+            user_priority: None,
+            smoothed_bps: 0.0,
+            waited_secs: 0,
+        }
+    }
+
+    fn session(id: &str, task: &str, buffered: f64) -> PlaybackView {
+        PlaybackView {
+            session_id: id.into(),
+            task_id: Some(task.into()),
+            engine: EngineKind::Http,
+            state: PlaybackSchedulingState::Playing,
+            buffered_ahead_secs: Some(buffered),
+            position_ms: None,
+        }
+    }
+
+    fn snap(cap_bps: u64, playback: Vec<PlaybackView>, tasks: Vec<TaskView>) -> SchedulerSnapshot {
+        SchedulerSnapshot {
+            now_ms: 0,
+            network: NetworkSnapshot::default(),
+            limits: GlobalLimits {
+                bandwidth_bps: Some(cap_bps),
+            },
+            tasks,
+            playback,
+        }
+    }
+
+    fn total(decisions: &[AllocationDecision], id: &str) -> u64 {
+        decisions
+            .iter()
+            .filter(|d| d.task_id == id)
+            .map(|d| d.allocated_bps)
+            .sum()
+    }
+
+    fn alloc_of<'a>(decisions: &'a [AllocationDecision], id: &str) -> &'a AllocationDecision {
+        decisions
+            .iter()
+            .find(|d| d.task_id == id)
+            .unwrap_or_else(|| panic!("no decision for {id}"))
+    }
+
+    /// Scenario 1 (§116): 0-buffer playback gets the EMERGENCY
+    /// allocation while background is dominated.
+    #[test]
+    fn sim1_zero_buffer_playback_gets_emergency() {
+        let cfg = SchedulerConfig::default();
+        let decisions = policy::compute(
+            &snap(
+                20 * MIB,
+                vec![session("s", "movie", 0.0)],
+                vec![task("movie"), task("a"), task("b")],
+            ),
+            &Default::default(),
+            &cfg,
+        );
+        let movie = total(&decisions, "movie");
+        assert!(movie >= cfg.emergency_min_bps, "emergency minimum granted");
+        let bg = total(&decisions, "a") + total(&decisions, "b");
+        assert!(
+            movie > bg,
+            "playback dominates under 0-buffer: {movie} vs {bg}"
+        );
+    }
+
+    /// Scenario 2 (§117): a 120 s buffer caps playback at target and
+    /// releases the rest of the capacity to background.
+    #[test]
+    fn sim2_healthy_buffer_releases_capacity() {
+        let cfg = SchedulerConfig::default();
+        let decisions = policy::compute(
+            &snap(
+                20 * MIB,
+                vec![session("s", "movie", 120.0)],
+                vec![task("movie"), task("bg")],
+            ),
+            &Default::default(),
+            &cfg,
+        );
+        let movie = total(&decisions, "movie");
+        let bg = total(&decisions, "bg");
+        assert_eq!(movie, cfg.playback_target_bps, "capped at target");
+        assert!(
+            bg >= (20 * MIB - movie),
+            "released capacity flows to background (movie={movie} bg={bg})"
+        );
+    }
+
+    /// Scenario 3 (§118): a seek flips the session to SEEKING — the
+    /// new range's allocation rises to emergency level and the reason
+    /// records the elevation; there is no old-range demand left to
+    /// weight (one session = one current position).
+    #[test]
+    fn sim3_seek_reroutes_allocation() {
+        let cfg = SchedulerConfig::default();
+        let low = policy::compute(
+            &snap(
+                20 * MIB,
+                vec![session("s", "movie", 0.5)],
+                vec![task("movie")],
+            ),
+            &Default::default(),
+            &cfg,
+        );
+        let mut seeking = session("s", "movie", 0.5);
+        seeking.state = PlaybackSchedulingState::Seeking;
+        let elevated = policy::compute(
+            &snap(20 * MIB, vec![seeking], vec![task("movie")]),
+            &Default::default(),
+            &cfg,
+        );
+        assert!(
+            total(&elevated, "movie") >= total(&low, "movie"),
+            "seek allocation must rise to at least the low-buffer level"
+        );
+        assert!(matches!(
+            alloc_of(&elevated, "movie").reason.code,
+            ReasonCode::SeekElevation
+        ));
+    }
+
+    /// Scenario 4 (§119): three background tasks over many ticks —
+    /// equal weights → equal shares; NO task is ever starved.
+    #[test]
+    fn sim4_background_fairness_over_ticks() {
+        let cfg = SchedulerConfig::default();
+        let ids = ["b0", "b1", "b2"];
+        let mut totals = [0u64; 3];
+        for tick in 0..12u64 {
+            let tasks: Vec<TaskView> = ids.iter().map(|id| task(id)).collect();
+            let decisions =
+                policy::compute(&snap(10 * MIB, vec![], tasks), &Default::default(), &cfg);
+            for (i, id) in ids.iter().enumerate() {
+                let grant = total(&decisions, id);
+                assert!(grant > 0, "tick {tick}: {id} starved");
+                totals[i] += grant;
+            }
+        }
+        assert_eq!(totals[0], totals[1], "fair shares");
+        assert_eq!(totals[1], totals[2]);
+    }
+
+    /// Scenario 5 (§120): the cap moves 20→10→2→30 MiB/s — every tick
+    /// respects the CURRENT cap; emergency playback still protected.
+    #[test]
+    fn sim5_adapts_to_bandwidth_changes_without_overflow() {
+        let cfg = SchedulerConfig::default();
+        for cap_mib in [20u64, 10, 2, 30] {
+            let decisions = policy::compute(
+                &snap(
+                    cap_mib * MIB,
+                    vec![session("s", "movie", 9.0)],
+                    vec![task("movie"), task("bg")],
+                ),
+                &Default::default(),
+                &cfg,
+            );
+            let sum: u64 = decisions.iter().map(|d| d.allocated_bps).sum();
+            assert!(sum <= cap_mib * MIB, "cap {cap_mib} MiB: sum {sum}");
+            let floor = cfg.emergency_min_bps.min(cap_mib * MIB);
+            assert!(total(&decisions, "movie") >= floor);
+        }
+    }
+
+    /// Scenario 6 (§121): availability [0,100)+[200,400) MiB, playhead
+    /// at 150 MiB — the RangeSet identifies the hole [150,200) as the
+    /// ONLY missing window inside the remaining playback path.
+    #[test]
+    fn sim6_availability_hole_identified() {
+        use ifuyo_tide_lib::core::scheduler::RangeSet;
+        let availability = RangeSet::from_ranges(vec![(0, 100 * MIB), (200 * MIB, 400 * MIB)]);
+        let missing = availability.missing_from(150 * MIB, 400 * MIB);
+        assert_eq!(missing.ranges(), &[(150 * MIB, 200 * MIB)]);
+    }
+
+    /// §166: invariants under randomized multi-entity snapshots.
+    #[test]
+    fn sim_random_invariants() {
+        let cfg = SchedulerConfig::default();
+        let mut state: u64 = 0xDEAD_BEEF;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for case in 0..80u32 {
+            let cap = 1 + next() % (30 * MIB);
+            let mut playback = Vec::new();
+            let mut tasks = Vec::new();
+            for i in 0..(next() % 3) as usize {
+                let mut p = session(&format!("s{i}"), &format!("t{i}"), (next() % 50) as f64);
+                if next() % 4 == 0 {
+                    p.state = PlaybackSchedulingState::Paused;
+                }
+                playback.push(p);
+                tasks.push(task(&format!("t{i}")));
+            }
+            for i in 0..(next() % 5) as usize {
+                tasks.push(task(&format!("b{i}")));
+            }
+            let snapshot = snap(cap, playback.clone(), tasks.clone());
+            let decisions = policy::compute(&snapshot, &Default::default(), &cfg);
+            let sum: u64 = decisions.iter().map(|d| d.allocated_bps).sum();
+            assert!(sum <= cap, "case {case}: sum {sum} > cap {cap}");
+            let mut ids: Vec<&str> = decisions.iter().map(|d| d.task_id.as_str()).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            assert_eq!(
+                ids.len(),
+                decisions.len(),
+                "case {case}: duplicate decision"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
 // §12: the torrent session rate is set through the PUBLIC API.
 // ---------------------------------------------------------------------
 
