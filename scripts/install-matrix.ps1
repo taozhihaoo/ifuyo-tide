@@ -20,7 +20,7 @@
 
 param(
     [string]$OldInstaller = "src-tauri\target\release\bundle\nsis\ifuyo-tide_0.1.0_x64-setup.exe",
-    [string]$NewInstaller = "src-tauri\target\release\bundle\nsis\ifuyo-tide_0.2.0-rc.1_x64-setup.exe",
+    [string]$NewInstaller = "src-tauri\target\release\bundle\nsis\ifuyo-tide_1.0.0_x64-setup.exe",
     [string]$OldVersion = "0.1.0",
     [string]$NewVersion = "1.0.0",
     [string]$DataRoot = ""
