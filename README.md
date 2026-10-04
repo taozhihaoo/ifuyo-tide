@@ -4,12 +4,10 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M8 — Windows Integration complete.**
-> Tide now behaves like a native Windows app: single instance,
-> tide:// deep link, .torrent association (confirm-first), system
-> tray with close-to-tray, notifications, autostart, window-state
-> restore, NSIS installer — all as a thin host boundary over the
-> M0–M7 core. See `docs/M8-report.md`.
+> **Current status: M9(上) — Product Polish underway.**
+> Core M0–M8 complete and polished: unified error copy with recovery
+> actions, per-view crash isolation, one formatting system, motion
+> tokens with reduced-motion support. See `docs/M9-report.md`.
 
 ---
 
@@ -36,7 +34,7 @@ upload of your data.
 | M6 | Local media library | **done** — scanner/reconciler/imports/query UI, benchmarked at 100k |
 | M7 | Smart scheduler | **done** — deterministic policy, real enforcement, simulations + benchmarks |
 | M8 | Windows integration | planned |
-| M9 | Product polish | planned |
+| M9 | Product polish | **in progress** — upper half: error UX, boundaries, formatting system |
 | M10–M12 | Security hardening, RC, 1.0 | planned |
 
 ## Architecture overview
