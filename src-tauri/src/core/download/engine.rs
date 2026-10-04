@@ -13,6 +13,7 @@ use super::url::{validate_download_url, DownloadFailure};
 use super::validator::{decide_resume, ResponseValidators};
 use super::HttpTransport;
 use super::{DownloadRepository, DownloadTaskRecord};
+use crate::core::scheduler::bandwidth::TokenBucket;
 use crate::error::TideError;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -30,16 +31,24 @@ const MAX_CONCURRENT_DOWNLOADS: usize = 3;
 /// Completion-hook type (M6(上) §26): one per engine, copied into
 /// each download at start.
 type OnCompleteHook = Arc<dyn Fn(&DownloadShared) + Send + Sync>;
+/// M7(上): observability hook — fired whenever a task rate CHANGES
+/// (the scheduler's §17 diff, for tests and telemetry).
+type OnRateChangeHook = Arc<dyn Fn(u64) + Send + Sync>;
 
+/// Clone shares the download map + repo (the map/hook live behind
+/// Arc) — the scheduler runtime and commands each hold their own
+/// handle that sees the SAME downloads (M7(上)).
+#[derive(Clone)]
 pub struct DownloadEngine {
-    downloads: Mutex<HashMap<String, Arc<DownloadShared>>>,
+    downloads: Arc<Mutex<HashMap<String, Arc<DownloadShared>>>>,
     /// M2: persistence boundary — the engine writes checkpoints and
     /// state transitions through the repository, never through SQL.
     repo: Arc<DownloadRepository>,
     /// M6(上) §26 completion hook: fires once per completed download
     /// (after finalize + persist) so higher layers such as the library
     /// import can react without the engine knowing about them.
-    on_complete: Mutex<Option<OnCompleteHook>>,
+    on_complete: Arc<Mutex<Option<OnCompleteHook>>>,
+    on_rate_change: Arc<Mutex<Option<OnRateChangeHook>>>,
 }
 
 pub struct DownloadShared {
@@ -60,6 +69,24 @@ pub struct DownloadShared {
     /// start() — `run_with_slot` is a free function and has no engine
     /// access.
     on_complete: Mutex<Option<OnCompleteHook>>,
+    /// M7(上) §25: the per-task bandwidth pacer. The scheduler sets
+    /// the rate; the engine loop enforces it (data plane).
+    limiter: Arc<TokenBucket>,
+    /// M7(上) §41 telemetry: the loop's smoothed throughput (bytes/sec).
+    telemetry_bps: std::sync::atomic::AtomicU64,
+}
+
+impl DownloadShared {
+    /// M7(上) §25: the scheduler's rate handle for this download.
+    pub fn limiter(&self) -> Arc<TokenBucket> {
+        self.limiter.clone()
+    }
+
+    /// M7(上) §41: the last smoothed throughput sample (bytes/sec).
+    pub fn telemetry_bps(&self) -> u64 {
+        self.telemetry_bps
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +127,8 @@ impl DownloadShared {
             repo,
             durable_len_tx,
             on_complete: Mutex::new(None),
+            limiter: Arc::new(crate::core::scheduler::bandwidth::TokenBucket::new(0)),
+            telemetry_bps: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -142,6 +171,8 @@ impl DownloadShared {
             repo,
             durable_len_tx,
             on_complete: Mutex::new(None),
+            limiter: Arc::new(crate::core::scheduler::bandwidth::TokenBucket::new(0)),
+            telemetry_bps: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -305,9 +336,10 @@ impl DownloadEngine {
     /// `repo`: the M2 persistence boundary (own SQLite connection).
     pub fn new(repo: Arc<DownloadRepository>) -> DownloadEngine {
         DownloadEngine {
-            downloads: Mutex::new(HashMap::new()),
+            downloads: Arc::new(Mutex::new(HashMap::new())),
             repo,
-            on_complete: Mutex::new(None),
+            on_complete: Arc::new(Mutex::new(None)),
+            on_rate_change: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -320,6 +352,48 @@ impl DownloadEngine {
             .on_complete
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(hook);
+    }
+
+    /// M7(上) §17 observability: fired on every CHANGED rate (diff).
+    pub fn set_on_rate_change(&self, hook: OnRateChangeHook) {
+        *self
+            .on_rate_change
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(hook);
+    }
+
+    /// M7(上) §25: sets the per-task rate (bytes/sec; 0 = unlimited)
+    /// on a running download. Unknown ids are a no-op.
+    pub fn set_task_rate_bps(&self, download_id: &str, bps: u64) {
+        if let Some(shared) = self
+            .downloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(download_id)
+        {
+            let changed = shared.limiter.rate_bps() != bps;
+            shared.limiter.set_rate_bps(bps);
+            if changed {
+                let hook = self
+                    .on_rate_change
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clone();
+                if let Some(hook) = hook {
+                    hook(bps);
+                }
+            }
+        }
+    }
+
+    /// M7(上) §41: this task's last smoothed throughput (bytes/sec).
+    pub fn task_telemetry_bps(&self, download_id: &str) -> u64 {
+        self.downloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(download_id)
+            .map(|s| s.telemetry_bps())
+            .unwrap_or(0)
     }
 
     fn engine_on_complete(&self) -> Option<Arc<dyn Fn(&DownloadShared) + Send + Sync>> {
@@ -440,6 +514,16 @@ impl DownloadEngine {
             .unwrap_or_else(PoisonError::into_inner)
             .get(download_id)
             .cloned()
+    }
+
+    /// Sync snapshot of all live entries (scheduler provider).
+    pub fn list_sync(&self) -> Vec<Arc<DownloadShared>> {
+        self.downloads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect()
     }
 
     /// Sync map lookup (the map is a plain mutex): used by the playback
@@ -876,6 +960,13 @@ async fn run_download(
             };
             match chunk {
                 Ok(Some(bytes)) => {
+                    // M7(上) §25: enforce the scheduler's rate — the
+                    // pacing sleep is bounded by the chunk size, so
+                    // pause/cancel stay responsive.
+                    let pace = shared.limiter.delay_for(bytes.len() as u64);
+                    if !pace.is_zero() {
+                        tokio::time::sleep(pace).await;
+                    }
                     if let Err(err) = sink.write_chunk(&bytes) {
                         break BodyOutcome::Failed(err);
                     }
@@ -892,6 +983,10 @@ async fn run_download(
                     // learn the new durable length.
                     shared.notify_durable_len(downloaded_now);
                     speed.record(chunk_len, Instant::now());
+                    shared.telemetry_bps.store(
+                        speed.smoothed_bps() as u64,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                     // M2 §20/§48 checkpoint: time-or-byte threshold,
                     // whichever first (1 s / 1 MiB). Written AFTER the
                     // bytes are in the part file → DB ≤ durable file.

@@ -38,6 +38,13 @@ pub struct PlaybackSessionInfo {
     /// Last reported playback position (M5 §36: session-scoped light
     /// resume support — NOT watch history, that is M6).
     pub last_position_ms: u64,
+    /// M7(上) §8/§34: the REAL browser-buffered-ahead seconds and the
+    /// element duration, reported alongside the position. Not exposed
+    /// beyond the app (skip) — internal scheduler input only.
+    #[serde(skip)]
+    pub buffered_ahead_secs: Option<f64>,
+    #[serde(skip)]
+    pub duration_ms: Option<u64>,
 }
 
 struct PlaybackSession {
@@ -88,6 +95,8 @@ impl PlaybackManager {
             capability,
             created_at_ms: crate::core::time::now_unix_ms() as u64,
             last_position_ms: 0,
+            buffered_ahead_secs: None,
+            duration_ms: None,
         };
         self.sessions
             .lock()
@@ -143,14 +152,43 @@ impl PlaybackManager {
     /// caller), stored on the session for light resume after a
     /// frontend reload. Not watch history — dies with the session.
     pub fn report_position(&self, session_id: &str, position_ms: u64) -> bool {
+        self.report_playback_telemetry(session_id, position_ms, None, None)
+    }
+
+    /// M7(上) §8: the full playback telemetry report — position plus
+    /// the REAL browser buffered-ahead seconds and duration. All three
+    /// are session-scoped runtime state.
+    pub fn report_playback_telemetry(
+        &self,
+        session_id: &str,
+        position_ms: u64,
+        duration_ms: Option<u64>,
+        buffered_ahead_secs: Option<f64>,
+    ) -> bool {
         let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
         match sessions.get_mut(session_id) {
             Some(session) => {
                 session.info.last_position_ms = position_ms;
+                if duration_ms.is_some() {
+                    session.info.duration_ms = duration_ms;
+                }
+                if buffered_ahead_secs.is_some() {
+                    session.info.buffered_ahead_secs = buffered_ahead_secs;
+                }
                 true
             }
             None => false,
         }
+    }
+
+    /// M7(上): all still-alive sessions with their owning task id —
+    /// the scheduler provider's input. Internal only.
+    pub fn active_sessions_internal(&self) -> Vec<(PlaybackSessionInfo, Option<String>)> {
+        let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        sessions
+            .values()
+            .map(|s| (s.info.clone(), s.owner.clone()))
+            .collect()
     }
 
     pub fn close(&self, session_id: &str) -> bool {

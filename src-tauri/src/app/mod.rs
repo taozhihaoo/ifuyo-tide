@@ -167,6 +167,30 @@ pub fn run() {
             }
         });
     }
+
+    // M7(上): the scheduler runtime — event-driven + 500 ms tick (§18).
+    // Holds Arcs only; process exit ends the loop (§132).
+    let user_priorities = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
+        String,
+        crate::core::scheduler::UserPriority,
+    >::new()));
+    let global_bandwidth_bps = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let scheduler_provider = crate::core::scheduler::AppSnapshotProvider {
+        downloads: download_engine.clone(),
+        torrents: torrent_engine.clone(),
+        torrent_repo: torrent_repository.clone(),
+        playback: playback.clone(),
+        user_priorities: user_priorities.clone(),
+        global_bandwidth_bps: global_bandwidth_bps.clone(),
+    };
+    let scheduler_runtime = crate::core::scheduler::SchedulerRuntime::new(
+        crate::core::scheduler::SchedulerConfig::default(),
+        Box::new(scheduler_provider),
+        download_engine.clone(),
+        torrent_engine.clone(),
+    );
+    scheduler_runtime.spawn_loop();
+    diagnostics::info("scheduler.started", &[]);
     let app_state = AppState::new(
         conn,
         download_engine,
@@ -174,6 +198,9 @@ pub fn run() {
         torrent_repository,
         playback,
         library,
+        scheduler_runtime,
+        user_priorities,
+        global_bandwidth_bps,
     );
 
     // M0.5 SPIKE: separate managed state for experiment infrastructure.

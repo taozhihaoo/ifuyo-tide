@@ -36,5 +36,5 @@ pub use model::{
     AllocationDecision, DecisionReason, DemandKind, EngineKind, GlobalLimits, NetworkSnapshot,
     PlaybackSchedulingState, PlaybackView, ReasonCode, SchedulerSnapshot, TaskRunState, TaskView,
 };
-pub use policy::compute;
-pub use runtime::SchedulerRuntime;
+pub use policy::{classify_playback, compute};
+pub use runtime::{AppSnapshotProvider, SchedulerRuntime, SnapshotProvider};

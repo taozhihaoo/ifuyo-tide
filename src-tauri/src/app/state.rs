@@ -28,9 +28,15 @@ pub struct AppState {
     pub playback: Arc<PlaybackManager>,
     /// M6(上): the local library (roots, items, scans).
     pub library: Arc<crate::core::library::LibraryService>,
+    /// M7(上): the scheduler runtime + its registries.
+    pub scheduler: Arc<crate::core::scheduler::SchedulerRuntime>,
+    pub user_priorities:
+        Arc<Mutex<std::collections::HashMap<String, crate::core::scheduler::UserPriority>>>,
+    pub global_bandwidth_bps: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl AppState {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         conn: Connection,
         download_engine: DownloadEngine,
@@ -38,6 +44,11 @@ impl AppState {
         torrent_repository: Arc<TorrentRepository>,
         playback: Arc<PlaybackManager>,
         library: Arc<crate::core::library::LibraryService>,
+        scheduler: Arc<crate::core::scheduler::SchedulerRuntime>,
+        user_priorities: Arc<
+            Mutex<std::collections::HashMap<String, crate::core::scheduler::UserPriority>>,
+        >,
+        global_bandwidth_bps: Arc<std::sync::atomic::AtomicU64>,
     ) -> Self {
         AppState {
             db: Mutex::new(conn),
@@ -49,6 +60,9 @@ impl AppState {
             torrent_repository,
             playback,
             library,
+            scheduler,
+            user_priorities,
+            global_bandwidth_bps,
         }
     }
 
