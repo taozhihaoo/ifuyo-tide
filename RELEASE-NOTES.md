@@ -1,9 +1,14 @@
-# Release Notes — ifuyo Tide 0.2.0-rc.1
+# Release Notes — ifuyo Tide 1.0.0
 
-Status: **Release Candidate** (channel: rc, profile: release).
-This is the first RC toward 1.0. It freezes the M0–M10 feature set:
-no new features were added in M11 — M11 validated, packaged and
-documented what exists.
+Status: **Stable 1.0** (channel: stable, profile: release).
+The full user-facing notes live in `docs/release-1.0.0.md` and
+`CHANGELOG.md`; this file mirrors them for packaging.
+
+Summary: the M0–M11 feature set validated end-to-end on real
+installers. M12 added no features; it fixed final-validation
+blockers (spike prototype in release nav; a launch-aborting IPC
+state mismatch), re-validated install/upgrade/uninstall/recovery on
+the 1.0.0 artifact, and froze documentation and artifacts.
 
 ## What Tide is
 
