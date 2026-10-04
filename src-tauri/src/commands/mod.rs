@@ -22,11 +22,15 @@ pub mod spike;
 #[cfg(not(debug_assertions))]
 pub mod spike {
     use crate::error::TideError;
-    macro_rules! disabled {
-        ($($name:ident => $ret:ty),* $(,)?) => {
+    // Fail-closed stubs: every debug command either reports a Security
+    // error or the conservative default. Return shapes are fixed per
+    // command kind (Result vs bool) — a uniform macro body cannot span
+    // both, which is exactly the drift that breaks release builds.
+    macro_rules! disabled_err {
+        ($($name:ident),* $(,)?) => {
             $(
                 #[tauri::command]
-                pub fn $name() -> $ret {
+                pub fn $name() -> Result<(), TideError> {
                     Err(TideError::Security(
                         "debug commands are disabled in release builds".into(),
                     ))
@@ -34,26 +38,30 @@ pub mod spike {
             )*
         };
     }
-    disabled![
-        spike_status => Result<(), TideError>,
-        spike_list_media => Result<(), TideError>,
-        spike_start_fixture_server => Result<(), TideError>,
-        spike_fixture_slow_ms => Result<(), TideError>,
-        spike_start_torrent => Result<(), TideError>,
-        spike_torrent_status => Result<(), TideError>,
-        spike_pause_torrent => Result<(), TideError>,
-        spike_resume_torrent => Result<(), TideError>,
-        spike_open_playback_session => Result<(), TideError>,
-        spike_close_playback_session => Result<(), TideError>,
-        spike_gateway_slow_ms => Result<(), TideError>,
-        spike_gateway_read_timeout_ms => Result<(), TideError>,
-        spike_events => Result<(), TideError>,
-        spike_clear_events => Result<(), TideError>,
-        spike_report_media_result => Result<(), TideError>,
-        spike_read_media_results => Result<(), TideError>,
-        spike_autorun_enabled => bool,
-        spike_shutdown => Result<(), TideError>,
+    disabled_err![
+        spike_status,
+        spike_list_media,
+        spike_start_fixture_server,
+        spike_fixture_slow_ms,
+        spike_start_torrent,
+        spike_torrent_status,
+        spike_pause_torrent,
+        spike_resume_torrent,
+        spike_open_playback_session,
+        spike_close_playback_session,
+        spike_gateway_slow_ms,
+        spike_gateway_read_timeout_ms,
+        spike_events,
+        spike_clear_events,
+        spike_report_media_result,
+        spike_read_media_results,
+        spike_shutdown,
     ];
+
+    #[tauri::command]
+    pub fn spike_autorun_enabled() -> bool {
+        false
+    }
 }
 pub mod tasks;
 pub mod torrent;
