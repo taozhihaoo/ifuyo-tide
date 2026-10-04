@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PlaybackController, type PlayerSnapshot } from "./controller/PlaybackController";
 import type { PlaybackError } from "./errorModel";
+import { strings } from "../../lib/strings";
 import {
   getPlaybackInfo,
   reportPlaybackPosition,
@@ -203,7 +204,7 @@ export function PlayerPage({
             <div className="task-actions">
               {error.recoverable && (
                 <button type="button" className="btn btn-small" onClick={() => controller.play()}>
-                  重试
+                  {strings.player.retry}
                 </button>
               )}
               {/* §33: unsupported media → offer the OS default player as
@@ -223,11 +224,11 @@ export function PlayerPage({
                     );
                   }}
                 >
-                  Open in default app
+                  {strings.player.openInDefaultApp}
                 </button>
               )}
               <button type="button" className="btn btn-small btn-danger" onClick={() => void stop()}>
-                关闭播放器
+                {strings.player.closePlayer}
               </button>
             </div>
           </div>

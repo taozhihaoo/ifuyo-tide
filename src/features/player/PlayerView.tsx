@@ -1,4 +1,5 @@
 import { EmptyState } from "../../components/EmptyState";
+import { strings } from "../../lib/strings";
 import { PlayerPage } from "./PlayerPage";
 import type { PlaybackSessionInfo } from "./playbackApi";
 
@@ -24,8 +25,8 @@ export function PlayerView({
         <h2>Player</h2>
       </div>
       <EmptyState
-        title="Nothing playing"
-        hint="Press Play on a download or a torrent file — playback streams through the Tide gateway."
+        title={strings.library.nothingPlaying}
+        hint={strings.library.nothingPlayingHint}
       />
     </section>
   );

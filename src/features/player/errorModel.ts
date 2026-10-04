@@ -31,16 +31,18 @@ export interface PlaybackError {
   timestamp: number;
 }
 
+// §57 audit: user-facing copy centralized in lib/strings (English is
+// the product language; locale swap lands with the i18n framework).
 const USER_MESSAGES: Record<PlaybackErrorKind, string> = {
-  UnsupportedMedia: "此媒体格式当前环境无法播放。",
-  DecodeError: "此媒体解码失败 — 文件可能已损坏或编码不受支持。",
-  NetworkError: "网络中断 — 正在尝试恢复…",
-  ResourceUnavailable: "资源不可用 — 下载任务可能已被删除。",
-  PlaybackTimeout: "等待数据超时 — 网络或来源没有响应。",
-  SessionExpired: "播放会话已过期 — 请重新开始播放。",
-  GatewayError: "播放网关出现问题。",
-  ResourceClosed: "资源已被关闭。",
-  UnknownMediaError: "无法播放此资源。",
+  UnsupportedMedia: "This media format cannot be played in this environment.",
+  DecodeError: "Decoding failed — the file may be damaged or the codec unsupported.",
+  NetworkError: "The connection was interrupted — trying to recover…",
+  ResourceUnavailable: "The resource is unavailable — its task may have been deleted.",
+  PlaybackTimeout: "Timed out waiting for data — the network or source is not responding.",
+  SessionExpired: "This playback session has expired — start it again.",
+  GatewayError: "The playback gateway hit a problem.",
+  ResourceClosed: "The resource was closed.",
+  UnknownMediaError: "This resource cannot be played.",
 };
 
 /** HTMLMediaElement MediaError codes (§12 error model input). */

@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { strings } from "../lib/strings";
 
 /**
  * M9 §89 — frontend error boundary: one broken view must NOT white-
@@ -37,7 +38,7 @@ export class ViewErrorBoundary extends Component<Props, State> {
             <h2>{this.props.viewName ?? "View"}</h2>
           </div>
           <div className="banner banner-error" role="alert">
-            This view hit an unexpected error. The rest of Tide still works.
+            strings.errors.viewCrashed
           </div>
           <div className="task-actions">
             <button
@@ -45,7 +46,7 @@ export class ViewErrorBoundary extends Component<Props, State> {
               className="btn btn-small"
               onClick={() => this.setState({ error: null })}
             >
-              Try again
+              {strings.errors.tryAgain}
             </button>
           </div>
         </section>

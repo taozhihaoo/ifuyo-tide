@@ -1,3 +1,4 @@
+import { strings } from "../../lib/strings";
 import type { PlayerSnapshot } from "./controller/PlaybackController";
 
 /**
@@ -23,7 +24,7 @@ export function StatusOverlay({
     case "loading":
       return (
         <div className="status-overlay" data-testid="status-overlay">
-          <span>加载中…</span>
+          <span>{strings.player.loading}</span>
         </div>
       );
     case "buffering":
@@ -34,14 +35,14 @@ export function StatusOverlay({
         backendAvailableBytes < sizeBytes;
       return (
         <div className="status-overlay" data-testid="status-overlay">
-          <span>{waitingForDownload && behind ? "正在等待下载数据…" : "缓冲中…"}</span>
+          <span>{waitingForDownload && behind ? strings.player.waitingForDownload : strings.player.buffering}</span>
         </div>
       );
     }
     case "ended":
       return (
         <div className="status-overlay" data-testid="status-overlay">
-          <span>播放结束</span>
+          <span>{strings.player.ended}</span>
         </div>
       );
     default:

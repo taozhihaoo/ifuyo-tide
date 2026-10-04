@@ -5,6 +5,7 @@ import {
   setOnboardingCompleted,
 } from "./onboardingApi";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
+import { strings } from "../../lib/strings";
 
 /**
  * M9(上) §6 — first-launch welcome flow: confirm the download
@@ -45,8 +46,8 @@ export function WelcomeFlow({ onDone }: { onDone: () => void }) {
   return (
     <div className="app welcome" role="dialog" aria-label="Welcome to Tide">
       <div className="welcome-card">
-        <h1>Tide</h1>
-        <p className="welcome-tagline">Download. Watch. Flow.</p>
+        <h1>{strings.welcome.title}</h1>
+        <p className="welcome-tagline">{strings.welcome.tagline}</p>
 
         <p>
           Tide downloads files over HTTP and BitTorrent and lets you watch
@@ -55,9 +56,9 @@ export function WelcomeFlow({ onDone }: { onDone: () => void }) {
 
         <div className="setting-row">
           <div className="setting-text">
-            <span className="setting-label">Download directory</span>
+            <span className="setting-label">{strings.welcome.downloadDirectory}</span>
             <span className="setting-help">
-              {downloadDir ?? "Where finished downloads are placed."}
+              {downloadDir ?? strings.welcome.downloadDirectoryHelp}
             </span>
           </div>
           <button type="button" className="btn" onClick={() => void choose()}>
