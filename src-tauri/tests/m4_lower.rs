@@ -641,12 +641,12 @@ async fn security_matrix_full() {
     assert_eq!(r.status, 404, "expired token must be access denied");
 
     // Token from "another session" (guessable/sequential shapes).
-    for guess in [
-        format!("{token}x"),
-        token.replace('a', "b"),
-        "0".repeat(36),
-        String::new(),
-    ] {
+    // The mutation must be guaranteed-different from the real token —
+    // a char replace can be a no-op depending on the random UUID.
+    let mut flipped = token.clone();
+    let first = flipped.remove(0);
+    flipped.insert(0, if first == '0' { '1' } else { '0' });
+    for guess in [format!("{token}x"), flipped, "0".repeat(36), String::new()] {
         let r = http_request(
             port,
             &format!("/stream/{guess}"),
@@ -949,19 +949,44 @@ async fn source_switch_releases_old_session() {
         write_pattern_at(&path, len);
         StreamingResource::File { path, len }
     };
-    let a = playback.open(make("a.bin", 64 * 1024), "video/mp4".into(), None).expect("open A");
-    let b = playback.open(make("b.bin", 64 * 1024), "video/mp4".into(), None).expect("open B");
+    let a = playback
+        .open(make("a.bin", 64 * 1024), "video/mp4".into(), None)
+        .expect("open A");
+    let b = playback
+        .open(make("b.bin", 64 * 1024), "video/mp4".into(), None)
+        .expect("open B");
 
     // A was serving…
-    let r = http_request(port, &format!("/stream/{}", a.session_id), Some("127.0.0.1:9"), "GET", Some("bytes=0-9")).await;
+    let r = http_request(
+        port,
+        &format!("/stream/{}", a.session_id),
+        Some("127.0.0.1:9"),
+        "GET",
+        Some("bytes=0-9"),
+    )
+    .await;
     assert_eq!(r.status, 206);
 
     // …switch: the app stops A before opening B; simulate exactly that.
     assert!(playback.close(&a.session_id));
-    let r = http_request(port, &format!("/stream/{}", a.session_id), Some("127.0.0.1:9"), "GET", Some("bytes=0-9")).await;
+    let r = http_request(
+        port,
+        &format!("/stream/{}", a.session_id),
+        Some("127.0.0.1:9"),
+        "GET",
+        Some("bytes=0-9"),
+    )
+    .await;
     assert_eq!(r.status, 404, "old session must be dead after a switch");
 
-    let r = http_request(port, &format!("/stream/{}", b.session_id), Some("127.0.0.1:9"), "GET", Some("bytes=0-9")).await;
+    let r = http_request(
+        port,
+        &format!("/stream/{}", b.session_id),
+        Some("127.0.0.1:9"),
+        "GET",
+        Some("bytes=0-9"),
+    )
+    .await;
     assert_eq!(r.status, 206, "new session must work");
 }
 
@@ -978,7 +1003,10 @@ async fn frontend_reload_recovers_active_session_projection() {
     let playback = manager().await;
     let session = playback
         .open(
-            StreamingResource::File { path, len: 64 * 1024 },
+            StreamingResource::File {
+                path,
+                len: 64 * 1024,
+            },
             "video/mp4".into(),
             None,
         )
