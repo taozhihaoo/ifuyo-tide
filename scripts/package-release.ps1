@@ -36,14 +36,18 @@ Set-Content -Path (Join-Path $out "SHA256SUMS.txt") -Value "$sha  $setupName" -E
 Write-Output ("ARTIFACT {0} size={1} sha256={2}" -f $setupName, $size, $sha)
 
 # --- toolchain / identity (§5/§80: single traceable answer) -------------------
-function Ver([string]$cmd, [string[]]$args) {
-    try { (& $cmd @args 2>$null | Select-Object -First 1) } catch { "unknown" }
+function Ver([string]$cmd, [string[]]$cmdArgs) {
+    # note: $args is an automatic variable in PS - must not be a param name
+    try { (& $cmd @cmdArgs 2>$null | Select-Object -First 1) } catch { "unknown" }
 }
 $rustcV = Ver "rustc" @("--version")
 $cargoV = Ver $CargoPath @("--version")
 $nodeV = Ver "node" @("--version")
 $pnpmV = Ver "pnpm" @("--version")
-$tauriV = (Ver "pnpm" @("tauri", "--version")) -replace "^tauri-cli ", ""
+# pnpm prints a banner line before the CLI output; filter for the tool line.
+# pnpm emits its banner on stderr; merge streams via cmd (PS5 NativeCommandError).
+$tauriRaw = cmd /c "pnpm tauri --version 2>&1"
+$tauriV = (($tauriRaw | Select-String "tauri-cli") | Out-String).Trim() -replace ".*tauri-cli\s*", ""
 $commit = git -C $repo rev-parse HEAD
 $branch = git -C $repo rev-parse --abbrev-ref HEAD
 $dirty = git -C $repo status --porcelain | Measure-Object | ForEach-Object { $_.Count }
