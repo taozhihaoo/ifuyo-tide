@@ -64,6 +64,10 @@ documentation and artifacts.
   (found and fixed during M11; E0308 in the stub macro).
 - M0.5 spike prototype surface (sidebar entry, autorun, view) is
   now compiled out of release navigation (M12 blocker fix).
+- The launch-queue drain command requested a mismatched Tauri state
+  type, aborting real launches seconds after startup (latent since
+  the Windows-integration milestone; found by 1.0 artifact
+  self-testing and fixed).
 
 ### Security
 
