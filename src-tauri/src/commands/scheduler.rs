@@ -223,11 +223,8 @@ pub fn load_persisted(state: &AppState) {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for (key, value) in repo.get_by_prefix(conn, KEY_PRIORITY_PREFIX)? {
-            if let (Some(task_id), Ok(p)) = (
-                key.strip_prefix(KEY_PRIORITY_PREFIX),
-                parse_priority(&value),
-            ) {
-                if let Some(p) = p {
+            if let Some(task_id) = key.strip_prefix(KEY_PRIORITY_PREFIX) {
+                if let Some(p) = parse_priority(&value).unwrap_or(None) {
                     priorities.insert(task_id.to_string(), p);
                 }
             }
