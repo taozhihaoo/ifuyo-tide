@@ -3,10 +3,18 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getAppInfo, getSettings, setDownloadDirectory } from "../../lib/api";
 import { isTideApiError } from "../../lib/ipc";
 import type { AppInfoDto } from "../../lib/types";
+import {
+  addRoot,
+  listRoots,
+  removeRoot,
+  setRootEnabled,
+  type LibraryRootDto,
+} from "../library/libraryApi";
 
 /**
- * Settings: M0 implements only the download directory for real. Language
- * and start-on-boot are honest placeholders for M9 / M8 respectively.
+ * Settings: the download directory (M0) and the M6(上) library
+ * folders. Language and start-on-boot are honest placeholders for
+ * M9 / M8 respectively.
  */
 export function SettingsView() {
   const [downloadDir, setDownloadDir] = useState<string | null>(null);
@@ -14,6 +22,7 @@ export function SettingsView() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfoDto | null>(null);
+  const [roots, setRoots] = useState<LibraryRootDto[]>([]);
 
   useEffect(() => {
     void (async () => {
@@ -21,6 +30,7 @@ export function SettingsView() {
         const settings = await getSettings();
         setDownloadDir(settings.downloadDir);
         setAppInfo(await getAppInfo());
+        setRoots(await listRoots());
       } catch (err) {
         setError(errorMessage(err));
       } finally {
@@ -44,6 +54,47 @@ export function SettingsView() {
       const settings = await setDownloadDirectory(picked);
       setDownloadDir(settings.downloadDir);
       setNotice("Download directory saved.");
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
+  const addLibraryFolder = useCallback(async () => {
+    setError(null);
+    setNotice(null);
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      title: "Add a library folder",
+    });
+    if (picked === null) return;
+    try {
+      const root = await addRoot(picked);
+      setRoots(await listRoots());
+      setNotice(`Library folder added: ${root.displayName}. Press Scan in the Library to index it.`);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
+  const removeLibraryFolder = useCallback(async (id: string) => {
+    setError(null);
+    setNotice(null);
+    try {
+      await removeRoot(id);
+      setRoots(await listRoots());
+      setNotice("Library folder removed (files on disk are untouched).");
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
+  const toggleLibraryFolder = useCallback(async (id: string, enabled: boolean) => {
+    setError(null);
+    setNotice(null);
+    try {
+      await setRootEnabled(id, enabled);
+      setRoots(await listRoots());
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -97,6 +148,61 @@ export function SettingsView() {
             <span className="setting-help">Disabled placeholder — Windows integration is M8.</span>
           </div>
           <input type="checkbox" disabled aria-label="Start on boot" />
+        </div>
+      </div>
+
+      <div className="settings-group">
+        <div className="settings-group-title">Library folders (M6)</div>
+        {roots.length === 0 ? (
+          <div className="setting-row">
+            <div className="setting-text">
+              <span className="setting-help" data-testid="library-roots-empty">
+                No library folders yet — finished downloads still enter the library automatically.
+              </span>
+            </div>
+          </div>
+        ) : (
+          roots.map((root) => (
+            <div className="setting-row" key={root.id} data-testid="library-root-row">
+              <div className="setting-text">
+                <span className="setting-label">{root.displayName}</span>
+                <span className="setting-help">
+                  {root.enabled ? "enabled" : "disabled"} · last scan:{" "}
+                  {root.lastScanAt != null
+                    ? new Date(root.lastScanAt).toLocaleString()
+                    : "never"}{" "}
+                  · {root.scanStatus}
+                </span>
+              </div>
+              <div className="task-actions">
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  onClick={() => void toggleLibraryFolder(root.id, !root.enabled)}
+                >
+                  {root.enabled ? "Disable" : "Enable"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-small btn-danger"
+                  onClick={() => void removeLibraryFolder(root.id)}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+        <div className="setting-row">
+          <div className="setting-text">
+            <span className="setting-help">
+              Explicit folders only — Tide never scans a whole drive. Download destination and
+              library folders are independent concepts.
+            </span>
+          </div>
+          <button type="button" className="btn" onClick={() => void addLibraryFolder()}>
+            Add folder…
+          </button>
         </div>
       </div>
 

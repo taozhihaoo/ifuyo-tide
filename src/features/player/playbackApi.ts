@@ -28,7 +28,8 @@ export interface PlaybackSessionInfo {
 
 export type PlaybackSourceRequest =
   | { kind: "download_task"; task_id: string }
-  | { kind: "torrent_file"; task_id: string; file_index: number };
+  | { kind: "torrent_file"; task_id: string; file_index: number }
+  | { kind: "library_item"; item_id: string };
 
 export function createPlaybackSession(
   source: PlaybackSourceRequest,

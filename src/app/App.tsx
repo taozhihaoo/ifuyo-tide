@@ -90,7 +90,7 @@ export default function App() {
         <main className="content">
           {view === "downloads" && <DownloadsView onPlay={playSource} />}
           {view === "torrents" && <TorrentsView onPlay={playSource} />}
-          {view === "library" && <LibraryView />}
+          {view === "library" && <LibraryView onPlay={playSource} />}
           {view === "player" && <PlayerView session={session} onClose={closeSession} />}
           {view === "settings" && <SettingsView />}
           {view === "spike" && <SpikeView />}
