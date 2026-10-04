@@ -52,8 +52,10 @@ export default function App() {
   }, []);
 
   // M0.5 SPIKE: hands-free experiment mode jumps straight to the spike
-  // view so the autorun sequence mounts and executes.
+  // view so the autorun sequence mounts and executes. Dev-only — the
+  // spike surface never runs in release builds.
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     spikeAutorunEnabled()
       .then((enabled) => {
         if (enabled) setView("spike");
@@ -208,7 +210,7 @@ export default function App() {
           <ViewErrorBoundary viewName="Settings">
             {view === "settings" && <SettingsView />}
           </ViewErrorBoundary>
-          {view === "spike" && <SpikeView />}
+          {import.meta.env.DEV && view === "spike" && <SpikeView />}
         </main>
       </div>
     </div>
