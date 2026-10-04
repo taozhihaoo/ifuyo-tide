@@ -30,6 +30,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "torrent_tasks",
         sql: include_str!("migrations/0003_torrent_tasks.sql"),
     },
+    Migration {
+        version: 4,
+        name: "library",
+        sql: include_str!("migrations/0004_library.sql"),
+    },
 ];
 
 /// Applies all pending migrations, in order.
