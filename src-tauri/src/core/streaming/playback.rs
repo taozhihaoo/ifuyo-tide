@@ -35,6 +35,9 @@ pub struct PlaybackSessionInfo {
     /// session creation; the player branches on this, never on kind.
     pub capability: PlaybackCapability,
     pub created_at_ms: u64,
+    /// Last reported playback position (M5 §36: session-scoped light
+    /// resume support — NOT watch history, that is M6).
+    pub last_position_ms: u64,
 }
 
 struct PlaybackSession {
@@ -84,6 +87,7 @@ impl PlaybackManager {
             available_bytes,
             capability,
             created_at_ms: crate::core::time::now_unix_ms() as u64,
+            last_position_ms: 0,
         };
         self.sessions
             .lock()
@@ -122,6 +126,31 @@ impl PlaybackManager {
             .unwrap_or_else(PoisonError::into_inner)
             .get(session_id)
             .map(|s| s.info.clone())
+    }
+
+    /// The most recently opened still-alive session (M5 §37: the
+    /// backend is the source of truth — a frontend reload re-queries
+    /// this instead of trusting React state).
+    pub fn active_session(&self) -> Option<PlaybackSessionInfo> {
+        let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        sessions
+            .values()
+            .max_by_key(|s| s.info.created_at_ms)
+            .map(|s| s.info.clone())
+    }
+
+    /// M5 §36: position reporting from the player (throttled by the
+    /// caller), stored on the session for light resume after a
+    /// frontend reload. Not watch history — dies with the session.
+    pub fn report_position(&self, session_id: &str, position_ms: u64) -> bool {
+        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        match sessions.get_mut(session_id) {
+            Some(session) => {
+                session.info.last_position_ms = position_ms;
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn close(&self, session_id: &str) -> bool {

@@ -152,6 +152,8 @@ pub fn run() {
             commands::playback::create_playback_session,
             commands::playback::stop_playback_session,
             commands::playback::get_playback_info,
+            commands::playback::get_active_playback_session,
+            commands::playback::report_playback_position,
             commands::playback::notify_seek,
             // M0.5 SPIKE commands
             commands::spike::spike_status,

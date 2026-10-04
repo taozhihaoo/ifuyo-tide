@@ -932,3 +932,73 @@ async fn performance_baseline_recorded() {
     println!("read-through seek (origin round trip): {seek_elapsed:?}");
     assert!(seek_elapsed < Duration::from_secs(5));
 }
+
+// ---------------------------------------------------------------------
+// M5 §64 Test 7: source switch — the old session is released (gateway
+// revoked) and the new session works.
+// ---------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn source_switch_releases_old_session() {
+    let dir = temp_dir("switch");
+    let playback = manager().await;
+    let port = playback.gateway_port();
+
+    let make = |name: &str, len: u64| {
+        let path = dir.join(name);
+        write_pattern_at(&path, len);
+        StreamingResource::File { path, len }
+    };
+    let a = playback.open(make("a.bin", 64 * 1024), "video/mp4".into(), None).expect("open A");
+    let b = playback.open(make("b.bin", 64 * 1024), "video/mp4".into(), None).expect("open B");
+
+    // A was serving…
+    let r = http_request(port, &format!("/stream/{}", a.session_id), Some("127.0.0.1:9"), "GET", Some("bytes=0-9")).await;
+    assert_eq!(r.status, 206);
+
+    // …switch: the app stops A before opening B; simulate exactly that.
+    assert!(playback.close(&a.session_id));
+    let r = http_request(port, &format!("/stream/{}", a.session_id), Some("127.0.0.1:9"), "GET", Some("bytes=0-9")).await;
+    assert_eq!(r.status, 404, "old session must be dead after a switch");
+
+    let r = http_request(port, &format!("/stream/{}", b.session_id), Some("127.0.0.1:9"), "GET", Some("bytes=0-9")).await;
+    assert_eq!(r.status, 206, "new session must work");
+}
+
+// ---------------------------------------------------------------------
+// M5 §64 Test 9: frontend reload — the backend session survives and
+// the projection (metadata + last position) is recoverable.
+// ---------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn frontend_reload_recovers_active_session_projection() {
+    let dir = temp_dir("reload");
+    let path = dir.join("f.bin");
+    write_pattern_at(&path, 64 * 1024);
+    let playback = manager().await;
+    let session = playback
+        .open(
+            StreamingResource::File { path, len: 64 * 1024 },
+            "video/mp4".into(),
+            None,
+        )
+        .expect("open");
+
+    // The player reports its position (throttled)…
+    assert!(playback.report_position(&session.session_id, 12_345));
+
+    // …the "frontend reloads": React state is gone, the backend still
+    // knows the active session and its projection.
+    let active = playback.active_session().expect("active session");
+    assert_eq!(active.session_id, session.session_id);
+    assert_eq!(active.last_position_ms, 12_345);
+
+    // Availability still refreshes through the same session.
+    let status = playback.status(&session.session_id).await.expect("status");
+    assert_eq!(status.available_bytes, 64 * 1024);
+    assert!(status.last_position_ms == 12_345);
+
+    // Nothing playing → None (no stale session is fabricated).
+    playback.close(&session.session_id);
+    assert!(playback.active_session().is_none());
+}

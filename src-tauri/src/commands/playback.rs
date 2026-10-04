@@ -62,6 +62,31 @@ pub async fn get_playback_info(
     Ok(state.playback.status(&session_id).await)
 }
 
+/// The most recently opened still-alive session (M5 §37: frontend
+/// reload recovers the player projection from THIS, never from React
+/// state); `None` when nothing has played.
+#[tauri::command]
+pub async fn get_active_playback_session(
+    state: State<'_, AppState>,
+) -> Result<Option<PlaybackSessionInfo>, TideError> {
+    match state.playback.active_session() {
+        Some(info) => Ok(state.playback.status(&info.session_id).await),
+        None => Ok(None),
+    }
+}
+
+/// M5 §36: the player reports its position (throttled, while playing)
+/// so a frontend reload can resume at the same spot. Session-scoped
+/// only — no watch history is kept.
+#[tauri::command]
+pub fn report_playback_position(
+    state: State<'_, AppState>,
+    session_id: String,
+    position_ms: u64,
+) -> bool {
+    state.playback.report_position(&session_id, position_ms)
+}
+
 /// The player seeked: demands queued for the old position are obsolete
 /// (§80) — cancel them so the new range is served first.
 #[tauri::command]
