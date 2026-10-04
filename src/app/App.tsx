@@ -5,6 +5,7 @@ import { PlayerView } from "../features/player/PlayerView";
 import {
   createPlaybackSession,
   describePlaybackError,
+  getActivePlaybackSession,
   stopPlaybackSession,
   type PlaybackSessionInfo,
 } from "../features/player/playbackApi";
@@ -30,6 +31,20 @@ export default function App() {
     spikeAutorunEnabled()
       .then((enabled) => {
         if (enabled) setView("spike");
+      })
+      .catch(() => {});
+  }, []);
+
+  // M5 §37: frontend reload recovery — React state is NOT the source
+  // of truth. If the backend still has a playback session (e.g. the
+  // window reloaded mid-play), adopt its projection.
+  useEffect(() => {
+    getActivePlaybackSession()
+      .then((active) => {
+        if (active && sessionRef.current == null) {
+          sessionRef.current = active;
+          setSession(active);
+        }
       })
       .catch(() => {});
   }, []);

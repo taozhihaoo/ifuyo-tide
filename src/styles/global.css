@@ -497,3 +497,150 @@ button:focus-visible {
   padding: 1px 8px;
   font-size: 11px;
 }
+
+/* ---------- M5 player ---------- */
+
+.player-page .view-header {
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.resource-info {
+  user-select: text;
+}
+
+.video-shell {
+  position: relative;
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 320px;
+}
+
+.video-surface {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 62vh;
+}
+
+.controls-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 12px 10px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  transition: opacity 0.25s ease;
+  opacity: 1;
+}
+
+.controls-host.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.time-display {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: #eee;
+  min-width: 110px;
+}
+
+.timeline {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  outline-offset: 2px;
+}
+
+.timeline-layer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.timeline-seekable {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.timeline-buffered {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.timeline-played {
+  background: var(--accent, #4a9eff);
+}
+
+.timeline-knob {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.volume-slider {
+  width: 90px;
+  accent-color: var(--accent, #4a9eff);
+}
+
+.rate-label select {
+  background: var(--bg, #222);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.status-overlay {
+  position: absolute;
+  inset: 0 0 88px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-size: 15px;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.player-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  text-align: center;
+  padding: 0 24px;
+}
+
+.player-diagnostics {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(128, 128, 128, 0.4);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text-dim, #999);
+  display: grid;
+  gap: 2px;
+  user-select: text;
+}

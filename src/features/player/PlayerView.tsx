@@ -1,12 +1,13 @@
 import { EmptyState } from "../../components/EmptyState";
-import { VideoPlayer } from "./VideoPlayer";
+import { PlayerPage } from "./PlayerPage";
 import type { PlaybackSessionInfo } from "./playbackApi";
 
 /**
- * M4(上): real progressive playback through the ONE gateway/ONE
- * player. The session object is owned by App (so Downloads/Torrents
- * views can open one); without a session this view stays an honest
- * empty state.
+ * M5 §42: the Player view hosts the PlayerPage for the app's single
+ * playback session. The session object is owned by App (backend is
+ * the source of truth — after a frontend reload App re-queries the
+ * backend's active session, §37/§38); without one this view stays an
+ * honest empty state.
  */
 export function PlayerView({
   session,
@@ -16,7 +17,7 @@ export function PlayerView({
   onClose: () => void;
 }) {
   return session ? (
-    <VideoPlayer session={session} onClose={onClose} />
+    <PlayerPage session={session} onClose={onClose} />
   ) : (
     <section className="view" aria-label="Player">
       <div className="view-header">

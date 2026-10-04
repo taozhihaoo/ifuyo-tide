@@ -1,0 +1,50 @@
+import type { PlayerSnapshot } from "./controller/PlaybackController";
+
+/**
+ * M5 §13/§57 — status overlay driven by REAL state only. A buffering
+ * wait is explained: with backend availability the UI can distinguish
+ * "buffering" (browser) from "waiting for download" (backend behind),
+ * and never invents percentages.
+ */
+export function StatusOverlay({
+  snapshot,
+  backendAvailableBytes,
+  sizeBytes,
+  waitingForDownload,
+}: {
+  snapshot: PlayerSnapshot;
+  backendAvailableBytes: number | null;
+  sizeBytes: number | null;
+  waitingForDownload: boolean;
+}) {
+  switch (snapshot.state) {
+    case "idle":
+      return null;
+    case "loading":
+      return (
+        <div className="status-overlay" data-testid="status-overlay">
+          <span>加载中…</span>
+        </div>
+      );
+    case "buffering":
+    case "seeking": {
+      const behind =
+        backendAvailableBytes != null &&
+        sizeBytes != null &&
+        backendAvailableBytes < sizeBytes;
+      return (
+        <div className="status-overlay" data-testid="status-overlay">
+          <span>{waitingForDownload && behind ? "正在等待下载数据…" : "缓冲中…"}</span>
+        </div>
+      );
+    }
+    case "ended":
+      return (
+        <div className="status-overlay" data-testid="status-overlay">
+          <span>播放结束</span>
+        </div>
+      );
+    default:
+      return null;
+  }
+}
