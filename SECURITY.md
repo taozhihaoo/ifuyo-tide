@@ -1,10 +1,10 @@
 # Security Policy
 
-## Status: M0 baseline
+## Status: M10 — Security & Release Hardening complete
 
-This document records the security boundaries that exist **today** (M0).
-It does not claim to enumerate all future risks — the full threat model
-and hardening pass happen in M10.
+This document reflects the security boundaries as hardened in M10.
+The full threat model, attack-surface inventory and audit findings
+live in docs/M10-threat-model.md and docs/M10-security-audit.md.
 
 ## Supported reporting
 
@@ -22,12 +22,16 @@ issue tracker). Please do not open public issues for exploitable bugs.
 | Filesystem | The backend touches exactly two places: its own app-data directory (`%LOCALAPPDATA%\ifuyo\Tide\`) and, on explicit user action, the user-chosen download directory. No arbitrary path access exists at all in M0. |
 | Errors | IPC failures are structured `{code, message}`; Rust internals, SQL errors and panics never reach the frontend; no `unwrap`/`expect` on user-input paths. |
 | Logs | Structured JSON lines, UTC timestamps, ids and event names only — never URLs, magnets, paths, or user-provided names. |
-| Dependencies | Minimal dependency set; `Cargo.lock` and lockfiles are committed; `--locked` is used for verification. Automated license/vuln scanning arrives with release hardening (M10). |
+| Dependencies | `Cargo.lock` committed; `--locked` verification; `cargo deny check` gates advisories/licenses/bans/sources (deny.toml). RustSec-ignored entries carry documented justification. |
+| Stream Gateway | Loopback-only bind (127.0.0.1, random port), per-session UUIDv4 capability token (runtime-only, revoked on stop), Host-header validation, single-range parsing, 16 KiB header cap, bounded 256 KiB chunks (M4). |
+| Windows integration | Single instance (second launches forward args + exit); tide:// deep link and .torrent association route through validated LaunchRequest parsing — no path/URL reaches the backend unvalidated (M8). |
 
-## Planned (future milestones)
+## Implemented through M10
 
-- Local media stream gateway: loopback-only bind, random port, per-session
-  capability token, no path-based access (M4).
-- Media probe isolation in a separate process with resource limits (M10).
-- Path normalization, containment, symlink/reparse-point checks (M1/M10).
-- Fuzzing of range, path and URL parsers (M10).
+- Local Stream Gateway: loopback-only, random port, capability token,
+  no path-based access (M4).
+- Path normalization, containment, reparse-point/junction refusal
+  (M1/M6/M10).
+- Fuzz/property coverage of range, path and URL parsing (M4/M9/M10
+  corpora).
+- Debug command surface removed from release builds (M10).
