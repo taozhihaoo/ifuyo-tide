@@ -27,6 +27,10 @@ const EVENT_INTERVAL: Duration = Duration::from_millis(200);
 /// Simple concurrency gate (M1 §42): a bound, not a scheduler.
 const MAX_CONCURRENT_DOWNLOADS: usize = 3;
 
+/// Completion-hook type (M6(上) §26): one per engine, copied into
+/// each download at start.
+type OnCompleteHook = Arc<dyn Fn(&DownloadShared) + Send + Sync>;
+
 pub struct DownloadEngine {
     downloads: Mutex<HashMap<String, Arc<DownloadShared>>>,
     /// M2: persistence boundary — the engine writes checkpoints and
@@ -35,7 +39,7 @@ pub struct DownloadEngine {
     /// M6(上) §26 completion hook: fires once per completed download
     /// (after finalize + persist) so higher layers such as the library
     /// import can react without the engine knowing about them.
-    on_complete: Mutex<Option<Arc<dyn Fn(&DownloadShared) + Send + Sync>>>,
+    on_complete: Mutex<Option<OnCompleteHook>>,
 }
 
 pub struct DownloadShared {
@@ -55,7 +59,7 @@ pub struct DownloadShared {
     /// finalize + persist). Copied from the engine-level hook at
     /// start() — `run_with_slot` is a free function and has no engine
     /// access.
-    on_complete: Mutex<Option<Arc<dyn Fn(&DownloadShared) + Send + Sync>>>,
+    on_complete: Mutex<Option<OnCompleteHook>>,
 }
 
 #[derive(Debug, Clone)]
@@ -311,7 +315,7 @@ impl DownloadEngine {
     /// application wiring decides what happens, the engine stays
     /// library-agnostic. Copied into every download started after
     /// this call.
-    pub fn set_on_complete(&self, hook: Arc<dyn Fn(&DownloadShared) + Send + Sync>) {
+    pub fn set_on_complete(&self, hook: OnCompleteHook) {
         *self
             .on_complete
             .lock()
