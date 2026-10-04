@@ -11,7 +11,7 @@ use ifuyo_tide_lib::core::download::url::validate_download_url;
 use ifuyo_tide_lib::core::download::{DownloadEngine, DownloadRequest};
 use ifuyo_tide_lib::core::recovery::recover_all;
 use ifuyo_tide_lib::core::resource::ByteRange;
-use ifuyo_tide_lib::core::streaming::demand::{DemandScheduler, DemandReason};
+use ifuyo_tide_lib::core::streaming::demand::{DemandReason, DemandScheduler};
 use ifuyo_tide_lib::core::streaming::playback::PlaybackManager;
 use ifuyo_tide_lib::core::streaming::resource::{OriginSource, StreamingResource};
 use std::io::Write;
@@ -55,8 +55,14 @@ fn physical_len(path: &Path) -> u64 {
 
 fn make_request(server: &TestServer, path: &str, dir: &Path) -> DownloadRequest {
     let url = validate_download_url(&server.url(path), true).expect("valid test url");
-    DownloadRequest::new(url, dir.to_path_buf(), None, OverwritePolicy::Overwrite, None)
-        .expect("request")
+    DownloadRequest::new(
+        url,
+        dir.to_path_buf(),
+        None,
+        OverwritePolicy::Overwrite,
+        None,
+    )
+    .expect("request")
 }
 
 fn engine() -> DownloadEngine {
@@ -116,7 +122,8 @@ async fn http_request(
         Some(r) => format!("Range: {r}\r\n"),
         None => String::new(),
     };
-    let request = format!("{method} {target} HTTP/1.1\r\n{host_line}{range_line}Connection: close\r\n\r\n");
+    let request =
+        format!("{method} {target} HTTP/1.1\r\n{host_line}{range_line}Connection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await.expect("write");
     let mut raw = Vec::new();
     loop {
@@ -161,12 +168,20 @@ fn parse_response(raw: &[u8]) -> RawResponse {
 
 impl RawResponse {
     fn header(&self, name: &str) -> Option<&str> {
-        self.headers.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
+        self.headers
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
     }
 
     fn assert_body_matches_pattern(&self, start: u64) {
         for (i, b) in self.body.iter().enumerate() {
-            assert_eq!(*b, pattern_byte(start + i as u64), "byte {} mismatch", start + i as u64);
+            assert_eq!(
+                *b,
+                pattern_byte(start + i as u64),
+                "byte {} mismatch",
+                start + i as u64
+            );
         }
     }
 }
@@ -216,7 +231,10 @@ async fn critical_1_http_progressive_playback_waits_at_frontier() {
     assert_eq!(r.status, 206);
     assert_eq!(r.body.len(), 64 * 1024, "read must WAIT for the frontier");
     r.assert_body_matches_pattern(384 * 1024);
-    assert!(elapsed < Duration::from_secs(30), "frontier wait exceeded: {elapsed:?}");
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "frontier wait exceeded: {elapsed:?}"
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -265,10 +283,17 @@ async fn critical_2_http_seek_beyond_frontier_reads_through_origin() {
     let elapsed = started.elapsed();
 
     assert_eq!(r.status, 206);
-    assert_eq!(r.body.len(), 64 * 1024, "seek beyond frontier must be served");
+    assert_eq!(
+        r.body.len(),
+        64 * 1024,
+        "seek beyond frontier must be served"
+    );
     r.assert_body_matches_pattern(768 * 1024);
     // The origin answered a real Range request for the missing tail.
-    assert!(server.seen_ranges().len() > before, "origin must have been read through");
+    assert!(
+        server.seen_ranges().len() > before,
+        "origin must have been read through"
+    );
     assert!(
         server.seen_ranges().iter().any(|r| r.contains("786432")),
         "origin range must start at the frontier offset"
@@ -297,7 +322,10 @@ async fn critical_7_restart_recovers_resource_and_playback() {
         .await
         .expect("start download");
     wait_frontier(&shared, 256 * 1024).await;
-    engine_a.pause(&shared.request.download_id).await.expect("pause");
+    engine_a
+        .pause(&shared.request.download_id)
+        .await
+        .expect("pause");
     // Wait for the paused state to be persisted.
     let started = Instant::now();
     loop {
@@ -337,7 +365,11 @@ async fn critical_7_restart_recovers_resource_and_playback() {
             url: server.url("/medium.bin"),
         }),
     };
-    assert_eq!(part.available_len(), paused_len, "availability = physical part size");
+    assert_eq!(
+        part.available_len(),
+        paused_len,
+        "availability = physical part size"
+    );
 
     let playback = manager().await;
     let session = playback
@@ -388,12 +420,19 @@ async fn critical_9_byte_preservation_across_random_ranges() {
         (MIB, 2 * MIB),
         (7 * MIB, 8 * MIB - 1),
         (7 * MIB, 8 * MIB),
-        (MIB + 13, MIB + 13 + 4999),          // non-aligned odd offset
-        (8 * MIB - MIB, 8 * MIB),             // last MiB
-        (4_000_003, 4_000_003 + 65_537),      // arbitrary interior window
+        (MIB + 13, MIB + 13 + 4999),     // non-aligned odd offset
+        (8 * MIB - MIB, 8 * MIB),        // last MiB
+        (4_000_003, 4_000_003 + 65_537), // arbitrary interior window
     ];
     for (start, end) in ranges {
-        let r = http_request(port, &target, Some("127.0.0.1:9"), "GET", Some(&format!("bytes={start}-{}", end - 1))).await;
+        let r = http_request(
+            port,
+            &target,
+            Some("127.0.0.1:9"),
+            "GET",
+            Some(&format!("bytes={start}-{}", end - 1)),
+        )
+        .await;
         assert_eq!(r.status, 206, "range {start}..{end}");
         assert_eq!(r.body.len() as u64, end - start);
         assert_eq!(
@@ -447,7 +486,11 @@ async fn task_delete_invalidates_its_sessions() {
         )
         .expect("open other");
 
-    assert_eq!(playback.close_for_owner("task-1"), 1, "one session invalidated");
+    assert_eq!(
+        playback.close_for_owner("task-1"),
+        1,
+        "one session invalidated"
+    );
     assert_eq!(playback.close_for_owner("task-1"), 0, "idempotent");
     assert!(playback.info(&session.session_id).is_none(), "session gone");
 
@@ -490,7 +533,16 @@ async fn session_close_aborts_blocked_read_promptly() {
     let port = playback.gateway_port();
     let target = format!("/stream/{}", session.session_id);
 
-    let client = tokio::spawn(async move { http_request(port, &target, Some("127.0.0.1:9"), "GET", Some("bytes=1024-65535")).await });
+    let client = tokio::spawn(async move {
+        http_request(
+            port,
+            &target,
+            Some("127.0.0.1:9"),
+            "GET",
+            Some("bytes=1024-65535"),
+        )
+        .await
+    });
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     let started = Instant::now();
@@ -505,7 +557,10 @@ async fn session_close_aborts_blocked_read_promptly() {
         "blocked reader must exit promptly, took {elapsed:?}"
     );
     assert_eq!(response.status, 206);
-    assert!(response.body.len() < 64_512 - 1024, "body must be truncated");
+    assert!(
+        response.body.len() < 64_512 - 1024,
+        "body must be truncated"
+    );
     let _ = tx; // sender dropped after close: no further growth by design
 }
 
@@ -552,7 +607,8 @@ async fn security_matrix_full() {
         let r = http_request(port, bad, Some("127.0.0.1:9"), "GET", None).await;
         assert!(
             r.status == 403 || r.status == 404,
-            "{bad} must be rejected, got {}", r.status
+            "{bad} must be rejected, got {}",
+            r.status
         );
         assert!(r.body.is_empty(), "{bad} must not leak bytes");
     }
@@ -574,11 +630,23 @@ async fn security_matrix_full() {
         )
         .expect("create ttl session");
     tokio::time::sleep(Duration::from_millis(200)).await;
-    let r = http_request(gw.port, &format!("/stream/{temp}"), Some("127.0.0.1:9"), "GET", None).await;
+    let r = http_request(
+        gw.port,
+        &format!("/stream/{temp}"),
+        Some("127.0.0.1:9"),
+        "GET",
+        None,
+    )
+    .await;
     assert_eq!(r.status, 404, "expired token must be access denied");
 
     // Token from "another session" (guessable/sequential shapes).
-    for guess in [format!("{token}x"), token.replace('a', "b"), "0".repeat(36), String::new()] {
+    for guess in [
+        format!("{token}x"),
+        token.replace('a', "b"),
+        "0".repeat(36),
+        String::new(),
+    ] {
         let r = http_request(
             port,
             &format!("/stream/{guess}"),
@@ -612,7 +680,14 @@ async fn security_matrix_full() {
         origin: None,
     };
     let gone = gw.create_session(missing, None).expect("create");
-    let r = http_request(gw.port, &format!("/stream/{gone}"), Some("127.0.0.1:9"), "GET", None).await;
+    let r = http_request(
+        gw.port,
+        &format!("/stream/{gone}"),
+        Some("127.0.0.1:9"),
+        "GET",
+        None,
+    )
+    .await;
     assert_eq!(r.status, 503, "missing resource must be a controlled 503");
     let _ = playback.close(&token);
 }
@@ -668,7 +743,8 @@ async fn fuzz_abuse_battery_never_panics() {
         let r = http_request(port, &target, Some("127.0.0.1:9"), "GET", Some(range)).await;
         assert!(
             r.status == 200 || r.status == 206 || r.status == 400 || r.status == 416,
-            "range {range:?} must resolve to a controlled status, got {}", r.status
+            "range {range:?} must resolve to a controlled status, got {}",
+            r.status
         );
     }
 
@@ -684,12 +760,20 @@ async fn fuzz_abuse_battery_never_panics() {
         let r = http_request(port, &bad_target, Some("127.0.0.1:9"), "GET", None).await;
         assert!(
             r.status == 404 || r.status == 400 || r.status == 403,
-            "target {bad_target:?} must be rejected, got {}", r.status
+            "target {bad_target:?} must be rejected, got {}",
+            r.status
         );
     }
 
     // The server must still be healthy: a valid request succeeds.
-    let r = http_request(port, &target, Some("127.0.0.1:9"), "GET", Some("bytes=0-99")).await;
+    let r = http_request(
+        port,
+        &target,
+        Some("127.0.0.1:9"),
+        "GET",
+        Some("bytes=0-99"),
+    )
+    .await;
     assert_eq!(r.status, 206);
     assert_eq!(r.body.len(), 100);
     r.assert_body_matches_pattern(0);
@@ -778,7 +862,10 @@ async fn performance_baseline_recorded() {
     assert_eq!(r.body.len() as u64, len);
     let mib_per_s = (len as f64 / MIB as f64) / elapsed.as_secs_f64();
     println!("gateway throughput: {mib_per_s:.1} MiB/s over {len} bytes in {elapsed:?}");
-    assert!(mib_per_s > 100.0, "gateway throughput floor: {mib_per_s:.1} MiB/s");
+    assert!(
+        mib_per_s > 100.0,
+        "gateway throughput floor: {mib_per_s:.1} MiB/s"
+    );
 
     // Session create+close latency (1000 cycles).
     let started = Instant::now();
@@ -798,7 +885,10 @@ async fn performance_baseline_recorded() {
     }
     let per_cycle = started.elapsed() / cycles;
     println!("session create+close: {} µs/cycle", per_cycle.as_micros());
-    assert!(per_cycle < Duration::from_millis(10), "session churn too slow");
+    assert!(
+        per_cycle < Duration::from_millis(10),
+        "session churn too slow"
+    );
 
     // Scheduler overhead: submit+complete pairs.
     let scheduler = Arc::new(DemandScheduler::new());

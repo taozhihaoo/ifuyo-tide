@@ -198,9 +198,8 @@ async fn http_request_bounded(
         Some(r) => format!("Range: {r}\r\n"),
         None => String::new(),
     };
-    let request = format!(
-        "{method} {target} HTTP/1.1\r\n{host_line}{range_line}Connection: close\r\n\r\n"
-    );
+    let request =
+        format!("{method} {target} HTTP/1.1\r\n{host_line}{range_line}Connection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await.expect("write");
     let mut raw = Vec::new();
     // Bounded read: a hung gateway must fail the test, not the suite.
@@ -258,7 +257,12 @@ impl RawResponse {
 
     fn assert_body_matches_pattern(&self, start: u64) {
         for (i, b) in self.body.iter().enumerate() {
-            assert_eq!(*b, pattern_byte(start + i as u64), "byte {} mismatch", start + i as u64);
+            assert_eq!(
+                *b,
+                pattern_byte(start + i as u64),
+                "byte {} mismatch",
+                start + i as u64
+            );
         }
     }
 }
@@ -300,12 +304,20 @@ async fn unified_gateway_serves_file_http_and_torrent() {
         accept_ranges: true,
     };
     let sessions = [
-        playback.open(file_res, "application/octet-stream".into(), None).expect("open file"),
-        playback.open(http_res, "application/octet-stream".into(), None).expect("open http"),
-        playback.open(torrent_res, "application/octet-stream".into(), None).expect("open torrent"),
+        playback
+            .open(file_res, "application/octet-stream".into(), None)
+            .expect("open file"),
+        playback
+            .open(http_res, "application/octet-stream".into(), None)
+            .expect("open http"),
+        playback
+            .open(torrent_res, "application/octet-stream".into(), None)
+            .expect("open torrent"),
     ];
     assert_eq!(playback.session_count(), 3);
-    assert!(sessions.iter().all(|s| s.url.contains(&format!(":{port}/"))));
+    assert!(sessions
+        .iter()
+        .all(|s| s.url.contains(&format!(":{port}/"))));
 
     for session in &sessions {
         // Closed range → 206 with exact patterned bytes.
@@ -359,7 +371,14 @@ async fn gateway_security_matrix() {
     let port = playback.gateway_port();
 
     // Missing Host header → rejected.
-    let r = http_request(port, &format!("/stream/{}", session.session_id), None, "GET", None).await;
+    let r = http_request(
+        port,
+        &format!("/stream/{}", session.session_id),
+        None,
+        "GET",
+        None,
+    )
+    .await;
     assert_eq!(r.status, 403);
     // Hostile Host header → rejected.
     let r = http_request(
@@ -427,11 +446,20 @@ async fn gateway_security_matrix() {
 async fn range_head_and_full_semantics() {
     let playback = manager().await;
     let (_dir, resource) = file_resource(LEN);
-    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
+    let session = playback
+        .open(resource, "application/octet-stream".into(), None)
+        .expect("open");
     let target = format!("/stream/{}", session.session_id);
 
     // Full GET.
-    let r = http_request(playback.gateway_port(), &target, Some("127.0.0.1:9"), "GET", None).await;
+    let r = http_request(
+        playback.gateway_port(),
+        &target,
+        Some("127.0.0.1:9"),
+        "GET",
+        None,
+    )
+    .await;
     assert_eq!(r.status, 200);
     assert_eq!(r.body.len() as u64, LEN);
     r.assert_body_matches_pattern(0);
@@ -469,22 +497,45 @@ async fn range_head_and_full_semantics() {
 async fn stop_revokes_gateway_and_cancels_demands() {
     let scheduler = Arc::new(DemandScheduler::new());
     let playback = Arc::new(
-        PlaybackManager::new(scheduler.clone()).await.expect("manager"),
+        PlaybackManager::new(scheduler.clone())
+            .await
+            .expect("manager"),
     );
     let (_dir, resource) = file_resource(64 * 1024);
-    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
+    let session = playback
+        .open(resource, "application/octet-stream".into(), None)
+        .expect("open");
     let port = playback.gateway_port();
     let target = format!("/stream/{}", session.session_id);
 
     // Queued (never served) demands exist for the session.
-    scheduler.submit(&session.session_id, ifuyo_tide_lib::core::resource::ByteRange::new(0, 1024).unwrap(), DemandReason::PlaybackBuffer, None);
+    scheduler.submit(
+        &session.session_id,
+        ifuyo_tide_lib::core::resource::ByteRange::new(0, 1024).unwrap(),
+        DemandReason::PlaybackBuffer,
+        None,
+    );
     assert_eq!(scheduler.pending_count(session.session_id.as_str()), 1);
 
-    let r = http_request(port, &target, Some("127.0.0.1:9"), "GET", Some("bytes=0-99")).await;
+    let r = http_request(
+        port,
+        &target,
+        Some("127.0.0.1:9"),
+        "GET",
+        Some("bytes=0-99"),
+    )
+    .await;
     assert_eq!(r.status, 206);
 
     assert!(playback.close(&session.session_id));
-    let r = http_request(port, &target, Some("127.0.0.1:9"), "GET", Some("bytes=0-99")).await;
+    let r = http_request(
+        port,
+        &target,
+        Some("127.0.0.1:9"),
+        "GET",
+        Some("bytes=0-99"),
+    )
+    .await;
     assert_eq!(r.status, 404, "stopped session must stop serving");
     assert_eq!(scheduler.pending_count(session.session_id.as_str()), 0);
 }
@@ -512,7 +563,9 @@ async fn torrent_read_without_peers_is_bounded() {
         file_index: 0,
         len: LEN,
     };
-    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
+    let session = playback
+        .open(resource, "application/octet-stream".into(), None)
+        .expect("open");
 
     let started = Instant::now();
     let r = http_request(
@@ -530,7 +583,10 @@ async fn torrent_read_without_peers_is_bounded() {
         "expected a truncated body, got {} bytes",
         r.body.len()
     );
-    assert!(elapsed < Duration::from_secs(25), "bounded wait exceeded: {elapsed:?}");
+    assert!(
+        elapsed < Duration::from_secs(25),
+        "bounded wait exceeded: {elapsed:?}"
+    );
     engine.shutdown().await;
 }
 
@@ -556,7 +612,9 @@ async fn torrent_read_waits_for_pieces_then_serves() {
         file_index: 0,
         len: LEN,
     };
-    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
+    let session = playback
+        .open(resource, "application/octet-stream".into(), None)
+        .expect("open");
     let range = format!("bytes={}-{}", LEN - 65536, LEN - 1);
 
     let r = http_request(
@@ -568,7 +626,11 @@ async fn torrent_read_waits_for_pieces_then_serves() {
     )
     .await;
     assert_eq!(r.status, 206);
-    assert_eq!(r.body.len(), 65536, "read must WAIT for pieces, not truncate");
+    assert_eq!(
+        r.body.len(),
+        65536,
+        "read must WAIT for pieces, not truncate"
+    );
     r.assert_body_matches_pattern(LEN - 65536);
     engine.shutdown().await;
 }
@@ -579,15 +641,18 @@ async fn torrent_read_waits_for_pieces_then_serves() {
 async fn seek_cancels_stale_demands() {
     let scheduler = Arc::new(DemandScheduler::new());
     let playback = Arc::new(
-        PlaybackManager::new(scheduler.clone()).await.expect("manager"),
+        PlaybackManager::new(scheduler.clone())
+            .await
+            .expect("manager"),
     );
     let (_dir, resource) = file_resource(256 * 1024);
-    let session = playback.open(resource, "application/octet-stream".into(), None).expect("open");
+    let session = playback
+        .open(resource, "application/octet-stream".into(), None)
+        .expect("open");
     let id = session.session_id.as_str();
 
-    let make_range = |start: u64| {
-        ifuyo_tide_lib::core::resource::ByteRange::new(start, start + 4096).unwrap()
-    };
+    let make_range =
+        |start: u64| ifuyo_tide_lib::core::resource::ByteRange::new(start, start + 4096).unwrap();
     // Old position demands queued…
     scheduler.submit(id, make_range(0), DemandReason::PlaybackBuffer, None);
     scheduler.submit(id, make_range(4096), DemandReason::PlaybackBuffer, None);
