@@ -4,11 +4,12 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M4(上) — Progressive Streaming core complete.**
+> **Current status: M4 — Progressive Streaming complete.**
 > A download's `.part`, a finished file and a torrent file all stream
 > through the same loopback Range Gateway into one real player: press
-> Play on any task with bytes on disk and watch while it downloads
-> (see `docs/M4-report.md`).
+> Play on any task with bytes on disk, watch past the download
+> frontier, and seek into un-downloaded regions (read-through).
+> See `docs/M4-report.md`.
 
 ---
 
@@ -30,7 +31,7 @@ upload of your data.
 | M1 | HTTP/HTTPS download core | **done** — pause/resume/retry/checksum validated |
 | M2 | Crash-safe persistence & resume | **done** — validated with crash-injection tests |
 | M3 | Torrent engine (librqbit) | **done** — loopback-swarm tested |
-| M4 | Progressive streaming, Range gateway, demand scheduler | **in progress** — upper half done: unified gateway + player streaming |
+| M4 | Progressive streaming, Range gateway, demand scheduler | **done** — unified gateway, progressive play + seek validated |
 | M5 | Player | planned |
 | M6 | Local media library | planned |
 | M7 | Smart scheduler | planned |
