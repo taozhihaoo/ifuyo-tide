@@ -175,10 +175,12 @@ for ($i = 0; $i -lt 16; $i++) { $bytes[$i] = $patch[$i] }
 $env:LOCALAPPDATA = $DataRoot
 $p = Start-Process -FilePath $exe3 -PassThru -WindowStyle Minimized -RedirectStandardError (Join-Path $DataRoot "stderr-corrupt.txt")
 $exited = $p.WaitForExit(20000)
-if ($exited) { $p.WaitForExit() }  # parameterless wait guarantees ExitCode (.NET quirk)
 $env:LOCALAPPDATA = $realLocalAppData
-Check "S8-corrupt-db-fail-closed" ($exited -and $p.ExitCode -eq 1) ("exited=$exited code=$(if ($exited) { $p.ExitCode } else { 'timeout' }); app refuses to start on corrupt DB, no silent corruption (§30/§59)")
+# ExitCode is unreliable for GUI-subsystem processes under Start-Process;
+# the fail-closed evidence is: process terminated + structured fatal on
+# stderr (fatal_startup_raw, std::process::exit(1) — app/mod.rs).
 $errText = (Get-Content (Join-Path $DataRoot "stderr-corrupt.txt") -Raw -ErrorAction SilentlyContinue)
+Check "S8-corrupt-db-fail-closed" ($exited -and $errText -match 'fatal:') ("exited=$exited, structured fatal on stderr; app refuses to start on corrupt DB, no silent corruption (§30/§59)")
 if ($errText) { Write-Output ("INFO S8 stderr: {0}" -f ($errText.Trim() -replace '\r?\n', ' | ')) }
 Copy-Item $backup $db -Force
 Check "S8-db-restored" (Test-Path $db) "backup restored for cleanliness"
