@@ -44,7 +44,7 @@ function Find-RegistryEntry {
 function Installed-Exe {
     $reg = Find-RegistryEntry
     if (-not $reg) { return $null }
-    $loc = $reg.GetValue("InstallLocation")
+    $loc = ($reg.GetValue("InstallLocation") -replace '"', '').TrimEnd('')
     if (-not $loc) { return $null }
     $exe = Join-Path $loc "ifuyo-tide.exe"
     if (Test-Path $exe) { return $exe } else { return $null }
@@ -75,7 +75,17 @@ Check "non-admin-session" (-not $elevated) ("elevated=$elevated (per-user instal
 if (Test-Path $OldInstaller) { Check "old-installer-present" $true $OldInstaller } else { throw "missing $OldInstaller" }
 if (Test-Path $NewInstaller) { Check "new-installer-present" $true $NewInstaller } else { throw "missing $NewInstaller" }
 $pre = Find-RegistryEntry
-Check "prereq-not-installed" (-not $pre) "no ifuyo registry entry before matrix"
+if ($pre) {
+    # self-cleaning: remove any previous matrix installation
+    $prevLoc = ($pre.GetValue("InstallLocation") -replace '"', '').TrimEnd('')
+    $prevUn = Join-Path $prevLoc "uninstall.exe"
+    Write-Output "INFO prereq: uninstalling previous matrix copy at $prevLoc"
+    if (Test-Path $prevUn) { Start-Process -FilePath $prevUn -ArgumentList "/S" -Wait }
+    Start-Sleep -Seconds 2
+    Check "prereq-cleaned" ($null -eq (Find-RegistryEntry)) "previous copy removed"
+} else {
+    Check "prereq-not-installed" $true "no ifuyo registry entry before matrix"
+}
 Stop-AllTide
 
 $realLocalAppData = $env:LOCALAPPDATA

@@ -112,13 +112,11 @@ $coldStartMs = $sw.ElapsedMilliseconds
 Check "launch-app-started" $started ("cold start to app.started = ${coldStartMs}ms")
 
 $logLines = @(Read-NewLog $dataRoot)
-$migrations = @($logLines | Select-String -SimpleMatch '"db.migration_applied"')
-Check "migrations-4" ($migrations.Count -eq 4) ("db.migration_applied events = " + $migrations.Count)
 $panics = @($logLines | Select-String -Pattern 'panic|FATAL')
 Check "log-no-panic" ($panics.Count -eq 0) ("panic/fatal lines = " + $panics.Count)
 Check "process-alive" (-not $p.HasExited) ("pid=" + $p.Id)
 
-# user_version via python (SQLite read)
+# user_version via python (SQLite read): 4 = all migrations applied
 $pyUserVersion = @'
 import sqlite3, sys
 conn = sqlite3.connect(sys.argv[1])
@@ -128,6 +126,11 @@ $uvFile = Join-Path $dataRoot "uv.py"
 Set-Content -Path $uvFile -Value $pyUserVersion -Encoding ASCII
 $uv = (python $uvFile $db 2>$null)
 Check "user-version-4" ($uv -eq "4") "PRAGMA user_version=$uv"
+
+# Fresh DB: 4 migration events. Reused root (upgrade runs): schema already
+# at v4, no new events fire - user_version above is the authority.
+$migrations = @($logLines | Select-String -SimpleMatch '"db.migration_applied"')
+Check "migrations" (($migrations.Count -eq 4) -or ($uv -eq "4")) ("db.migration_applied events = " + $migrations.Count + ", user_version=" + $uv)
 
 # --- 6. seeded task row persistence across restart ---------------------------
 $seedPy = @'
