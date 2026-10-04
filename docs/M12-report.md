@@ -222,7 +222,11 @@ probe) — not a developer-dir run.
 Installer `ifuyo-tide_1.0.0_x64-setup.exe`:
 `eafe679605677b6eb2da6e530e653b9138f41d56c4e53c580c2141c3b6a7e910`
 (recomputed at final packaging on the tagged tree; see
-release/SHA256SUMS.txt for the authoritative value).
+release/SHA256SUMS.txt for the authoritative value). The packaged
+exe was built after 812573a (last code-affecting commit); commits
+between that build and the v1.0.0 tag touch docs/scripts only (FACT
+— `git diff 812573a..v1.0.0 --stat` lists no Rust/frontend source),
+so the binary is the tagged commit's binary.
 
 ## 28. KNOWN LIMITATIONS
 
