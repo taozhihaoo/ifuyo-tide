@@ -6,6 +6,7 @@
 //! coordinator.
 
 pub mod engine;
+pub mod monitor;
 pub mod recovery;
 pub mod source;
 

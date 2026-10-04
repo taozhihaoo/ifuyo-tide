@@ -84,6 +84,69 @@ pub fn run() {
         }
         Err(err) => fatal_startup("torrent recovery failed", &err),
     }
+    // M6(上): the library service (own connection, same versioned
+    // database file).
+    let library_repo = match crate::core::library::LibraryRepository::open(&dirs.database_file) {
+        Ok(repo) => std::sync::Arc::new(repo),
+        Err(err) => fatal_startup("failed to open library repository", &err),
+    };
+    let library = std::sync::Arc::new(crate::core::library::LibraryService::new(library_repo));
+
+    // M6(上) §26: completed downloads enter the library automatically.
+    // The hook is best-effort: an import failure must never fail the
+    // (already finished) download.
+    {
+        let library = library.clone();
+        download_engine.set_on_complete(std::sync::Arc::new(move |shared| {
+            let status = shared.status();
+            if let Some(final_path) = &status.final_path {
+                if let Err(err) = library.import_download(
+                    final_path,
+                    &shared.request.destination_dir,
+                    &shared.request.download_id,
+                    shared
+                        .request
+                        .expected_checksum
+                        .as_ref()
+                        .map(|(_, hex)| hex.as_str()),
+                ) {
+                    crate::diagnostics::warn(
+                        "library.import_failed",
+                        &[("code", err.code())],
+                    );
+                }
+            }
+        }));
+    }
+
+    // M6(上) §27 enabling fix: torrent completion was never detected —
+    // the monitor reconciles finished torrents and imports their files.
+    crate::core::torrent::monitor::spawn(
+        torrent_engine.clone(),
+        torrent_repository.clone(),
+        library.clone(),
+    );
+
+    // M6(上) §71/§73: light startup verification on a background task —
+    // the UI never waits for it (§72).
+    {
+        let library = library.clone();
+        tauri::async_runtime::spawn(async move {
+            match tauri::async_runtime::spawn_blocking(move || library.verify_light_blocking()).await {
+                Ok(Ok(changed)) if changed > 0 => {
+                    crate::diagnostics::info(
+                        "library.startup_verify",
+                        &[("changed", &changed.to_string())],
+                    );
+                }
+                Ok(Ok(_)) => {}
+                Ok(Err(_)) | Err(_) => {
+                    crate::diagnostics::warn("library.startup_verify_failed", &[]);
+                }
+            }
+        });
+    }
+
     // M4(上): playback manager owns the ONE gateway + the demand
     // scheduler (playback beats background, M4(上) §71).
     let demand_scheduler =
@@ -111,6 +174,7 @@ pub fn run() {
         torrent_engine,
         torrent_repository,
         playback,
+        library,
     );
 
     // M0.5 SPIKE: separate managed state for experiment infrastructure.
@@ -148,6 +212,18 @@ pub fn run() {
             commands::torrent::resume_torrent,
             commands::torrent::remove_torrent,
             commands::torrent::delete_torrent_data,
+            // M6(上) library commands
+            commands::library::library_list_roots,
+            commands::library::library_add_root,
+            commands::library::library_remove_root,
+            commands::library::library_set_root_enabled,
+            commands::library::library_scan,
+            commands::library::library_list_items,
+            commands::library::library_get_item,
+            commands::library::library_refresh_item,
+            commands::library::library_remove_item,
+            commands::library::library_delete_item,
+            commands::library::library_reveal,
             // M4(上) playback commands
             commands::playback::create_playback_session,
             commands::playback::stop_playback_session,

@@ -28,6 +28,9 @@ pub enum PlaybackSourceRequest {
     DownloadTask { task_id: String },
     /// One file inside a torrent task (M3 repository is the trust root).
     TorrentFile { task_id: String, file_index: u32 },
+    /// A library item (M6(上) §46/§59: item id → backend validation →
+    /// capability URL; the renderer never sees a path).
+    LibraryItem { item_id: String },
 }
 
 /// Opens a playback session and returns the loopback URL for
@@ -111,6 +114,24 @@ async fn resolve_resource(
         } => {
             let (r, n) = resolve_torrent_file(state, &task_id, file_index).await?;
             Ok((r, n, Some(task_id)))
+        }
+        PlaybackSourceRequest::LibraryItem { item_id } => {
+            // §48: the service re-validates the filesystem right now;
+            // a completed library file maps to the plain File resource
+            // — fully available, ranged reads through the gateway.
+            let (canonical, size, _name) = state.library.play_source(&item_id)?;
+            let name = canonical
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            Ok((
+                StreamingResource::File {
+                    path: canonical,
+                    len: size,
+                },
+                name,
+                Some(item_id),
+            ))
         }
     }
 }

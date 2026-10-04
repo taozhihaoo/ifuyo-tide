@@ -32,6 +32,10 @@ pub struct DownloadEngine {
     /// M2: persistence boundary — the engine writes checkpoints and
     /// state transitions through the repository, never through SQL.
     repo: Arc<DownloadRepository>,
+    /// M6(上) §26: fired once per completed download (after finalize
+    /// + persist) so higher layers (library import) can react without
+    /// the engine knowing about them.
+    on_complete: Mutex<Option<Arc<dyn Fn(&DownloadShared) + Send + Sync>>>,
 }
 
 pub struct DownloadShared {
@@ -47,6 +51,11 @@ pub struct DownloadShared {
     /// wake on real availability instead of polling (write → flush →
     /// update availability → wake readers, §112).
     durable_len_tx: tokio::sync::watch::Sender<u64>,
+    /// M6(上) §26: fired once when this download completes (after
+    /// finalize + persist). Copied from the engine-level hook at
+    /// start() — `run_with_slot` is a free function and has no engine
+    /// access.
+    on_complete: Mutex<Option<Arc<dyn Fn(&DownloadShared) + Send + Sync>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +95,7 @@ impl DownloadShared {
             transport: HttpTransport::new().expect("static config"),
             repo,
             durable_len_tx,
+            on_complete: Mutex::new(None),
         }
     }
 
@@ -127,6 +137,32 @@ impl DownloadShared {
             transport: HttpTransport::new().expect("static config"),
             repo,
             durable_len_tx,
+            on_complete: Mutex::new(None),
+        }
+    }
+
+    /// M6 §26: sets this download's completion hook (copied from the
+    /// engine by `start`).
+    pub(crate) fn set_on_complete(
+        &self,
+        hook: Arc<dyn Fn(&DownloadShared) + Send + Sync>,
+    ) {
+        *self
+            .on_complete
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(hook);
+    }
+
+    /// M6 §26: fires the completion hook (best-effort; a panicking or
+    /// failing hook must never affect the completed download).
+    pub(crate) fn fire_on_complete(&self) {
+        let hook = self
+            .on_complete
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(hook) = hook {
+            hook(self);
         }
     }
 
@@ -270,7 +306,28 @@ impl DownloadEngine {
         DownloadEngine {
             downloads: Mutex::new(HashMap::new()),
             repo,
+            on_complete: Mutex::new(None),
         }
+    }
+
+    /// Registers the completion hook (M6 §26). At most one hook —
+    /// application wiring decides what happens, the engine stays
+    /// library-agnostic. Copied into every download started after
+    /// this call.
+    pub fn set_on_complete(&self, hook: Arc<dyn Fn(&DownloadShared) + Send + Sync>) {
+        *self
+            .on_complete
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(hook);
+    }
+
+    fn engine_on_complete(
+        &self,
+    ) -> Option<Arc<dyn Fn(&DownloadShared) + Send + Sync>> {
+        self.on_complete
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// Registers and starts a download; returns its shared handle.
@@ -338,6 +395,9 @@ impl DownloadEngine {
             started_at: Some(now),
             completed_at: None,
         };
+        if let Some(hook) = self.engine_on_complete() {
+            shared.set_on_complete(hook);
+        }
         self.repo.insert(&record)?;
         downloads.insert(id.clone(), shared.clone());
 
@@ -929,6 +989,10 @@ async fn run_download(
                     inner.final_path = Some(final_path);
                 }
                 shared.persist_state("completed", downloaded, None, None);
+                // M6 §26: the download is durably complete — notify
+                // higher layers (library import). Must run after the
+                // atomic rename + persisted state.
+                shared.fire_on_complete();
                 emit_progress(
                     shared,
                     app.as_ref(),

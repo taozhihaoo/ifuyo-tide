@@ -26,6 +26,8 @@ pub struct AppState {
     pub torrent_repository: Arc<TorrentRepository>,
     /// M4(上): playback sessions + the streaming gateway.
     pub playback: Arc<PlaybackManager>,
+    /// M6(上): the local library (roots, items, scans).
+    pub library: Arc<crate::core::library::LibraryService>,
 }
 
 impl AppState {
@@ -35,6 +37,7 @@ impl AppState {
         torrent_engine: crate::core::torrent::TorrentEngine,
         torrent_repository: Arc<TorrentRepository>,
         playback: Arc<PlaybackManager>,
+        library: Arc<crate::core::library::LibraryService>,
     ) -> Self {
         AppState {
             db: Mutex::new(conn),
@@ -45,6 +48,7 @@ impl AppState {
             torrent_engine,
             torrent_repository,
             playback,
+            library,
         }
     }
 
