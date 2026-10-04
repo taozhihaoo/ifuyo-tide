@@ -174,7 +174,7 @@ mod tests {
         );
         // M4(下) §98 streaming taxonomy codes are stable.
         use StreamingFailure as S;
-        let cases: [(S, &str); 11] = [
+        let cases: [(S, &str); 13] = [
             (S::Playback("x".into()), "PLAYBACK_ERROR"),
             (S::Gateway("x".into()), "GATEWAY_ERROR"),
             (S::Resource("x".into()), "RESOURCE_UNAVAILABLE"),

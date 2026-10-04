@@ -217,7 +217,14 @@ pub fn library_scan(
             let outcome: Result<ScanOutcome, TideError> = tauri::async_runtime::spawn_blocking({
                 let library = library.clone();
                 let root_id = root_id.clone();
-                move || library.scan_root_blocking_with(&root_id, &flag, Default::default(), &mut progress)
+                move || {
+                    library.scan_root_blocking_with(
+                        &root_id,
+                        &flag,
+                        Default::default(),
+                        &mut progress,
+                    )
+                }
             })
             .await
             .unwrap_or_else(|_| Err(TideError::Internal("scan task failed".into())));
@@ -309,7 +316,9 @@ pub fn library_delete_item(state: State<'_, AppState>, item_id: String) -> Resul
     // USE — deletion is REFUSED (structured FILE_IN_USE), never done
     // silently behind a playing video.
     if state.playback.has_session_for_owner(&item_id) {
-        return Err(TideError::Streaming(crate::error::StreamingFailure::FileInUse));
+        return Err(TideError::Streaming(
+            crate::error::StreamingFailure::FileInUse,
+        ));
     }
     super::ipc_result(
         "library_delete_item",

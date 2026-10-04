@@ -213,9 +213,11 @@ pub fn scan_root_blocking_with(
     // §109: abort BEFORE any database write — the DB must stay exactly
     // as it was (failure-injection acceptance criterion).
     if faults.fail_before_db_upsert {
-        return Err(TideError::Streaming(crate::error::StreamingFailure::Resource(
-            "injected failure before database upsert".into(),
-        )));
+        return Err(TideError::Streaming(
+            crate::error::StreamingFailure::Resource(
+                "injected failure before database upsert".into(),
+            ),
+        ));
     }
     if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
         return Ok(ScanOutcome {
@@ -232,9 +234,9 @@ pub fn scan_root_blocking_with(
 
     // §109: abort AFTER a successful commit — committed data stays.
     if faults.fail_after_scan {
-        return Err(TideError::Streaming(crate::error::StreamingFailure::Resource(
-            "injected failure after scan commit".into(),
-        )));
+        return Err(TideError::Streaming(
+            crate::error::StreamingFailure::Resource("injected failure after scan commit".into()),
+        ));
     }
     let status = if errors > 0 {
         ScanStatus::Partial
