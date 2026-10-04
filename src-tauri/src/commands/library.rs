@@ -7,7 +7,9 @@
 //! (§38/§40) and never blocks the UI thread.
 
 use crate::app::state::AppState;
-use crate::core::library::model::{AvailabilityStatus, ItemQuery, LibraryItem, LibraryRoot, MediaCategory, OriginType};
+use crate::core::library::model::{
+    AvailabilityStatus, ItemQuery, LibraryItem, LibraryRoot, MediaCategory, OriginType,
+};
 use crate::core::library::scanner::ScanOutcome;
 use crate::error::TideError;
 use serde::{Deserialize, Serialize};
@@ -96,9 +98,11 @@ fn parse_query(dto: ItemQueryDto) -> Result<ItemQuery, TideError> {
         },
         availability: match dto.availability.as_deref() {
             None | Some("all") => None,
-            Some(raw) => Some(AvailabilityStatus::parse(raw).ok_or_else(|| {
-                TideError::InvalidInput(format!("unknown availability: {raw}"))
-            })?),
+            Some(raw) => {
+                Some(AvailabilityStatus::parse(raw).ok_or_else(|| {
+                    TideError::InvalidInput(format!("unknown availability: {raw}"))
+                })?)
+            }
         },
         origin: match dto.origin.as_deref() {
             None | Some("all") => None,
@@ -116,12 +120,7 @@ fn parse_query(dto: ItemQueryDto) -> Result<ItemQuery, TideError> {
 
 #[tauri::command]
 pub fn library_list_roots(state: State<'_, AppState>) -> Result<Vec<LibraryRootDto>, TideError> {
-    Ok(state
-        .library
-        .list_roots()?
-        .iter()
-        .map(root_dto)
-        .collect())
+    Ok(state.library.list_roots()?.iter().map(root_dto).collect())
 }
 
 /// The path string comes from the directory picker — it is NEVER
@@ -274,11 +273,7 @@ pub fn library_get_item(
     state: State<'_, AppState>,
     item_id: String,
 ) -> Result<Option<LibraryItemDto>, TideError> {
-    Ok(state
-        .library
-        .get_item(&item_id)?
-        .as_ref()
-        .map(item_dto))
+    Ok(state.library.get_item(&item_id)?.as_ref().map(item_dto))
 }
 
 /// §49: re-stat one item (external modification / deletion).
@@ -302,7 +297,10 @@ pub fn library_remove_item(state: State<'_, AppState>, item_id: String) -> Resul
 #[tauri::command]
 pub fn library_delete_item(state: State<'_, AppState>, item_id: String) -> Result<(), TideError> {
     state.playback.close_for_owner(&item_id);
-    super::ipc_result("library_delete_item", state.library.delete_item_from_disk(&item_id))
+    super::ipc_result(
+        "library_delete_item",
+        state.library.delete_item_from_disk(&item_id),
+    )
 }
 
 /// §91: basic Open File / Open Folder via Explorer — backend-resolved
@@ -325,22 +323,26 @@ pub fn library_reveal(
             std::process::Command::new("explorer")
                 .arg(parent)
                 .spawn()
-                .map_err(|_| crate::error::StreamingFailure::Resource(
-                    "could not open the folder".into(),
-                ))?;
+                .map_err(|_| {
+                    crate::error::StreamingFailure::Resource("could not open the folder".into())
+                })?;
         } else {
             std::process::Command::new("explorer")
                 .arg("/select,")
                 .arg(&canonical)
                 .spawn()
-                .map_err(|_| crate::error::StreamingFailure::Resource(
-                    "could not open the file location".into(),
-                ))?;
+                .map_err(|_| {
+                    crate::error::StreamingFailure::Resource(
+                        "could not open the file location".into(),
+                    )
+                })?;
         }
         Ok(())
     }
     #[cfg(not(windows))]
     {
-        Err(TideError::InvalidInput("not supported on this platform".into()))
+        Err(TideError::InvalidInput(
+            "not supported on this platform".into(),
+        ))
     }
 }

@@ -231,14 +231,13 @@ impl LibraryRepository {
         // Missing marking, excluding uncovered prefixes (§69): only
         // items under directories this scan really covered may be
         // declared Missing.
-        let missing;
-        if uncovered_prefixes.is_empty() {
-            missing = tx.execute(
+        let missing = if uncovered_prefixes.is_empty() {
+            tx.execute(
                 "UPDATE library_items SET availability_status = 'missing', updated_at = ?2
                  WHERE root_id = ?1 AND availability_status = 'available'
                  AND canonical_path NOT IN (SELECT path FROM scan_seen)",
                 params![root_id, now],
-            )? as u64;
+            )? as u64
         } else {
             let mut sql = String::from(
                 "UPDATE library_items SET availability_status = 'missing', updated_at = ?2
@@ -261,10 +260,10 @@ impl LibraryRepository {
                     escape_like(&prefix.to_string_lossy())
                 )));
             }
-            missing = stmt.execute(rusqlite::params_from_iter(
+            stmt.execute(rusqlite::params_from_iter(
                 all_params.iter().map(|p| p.as_ref()),
-            ))? as u64;
-        }
+            ))? as u64
+        };
 
         tx.execute("DELETE FROM scan_seen", [])?;
         tx.commit()?;

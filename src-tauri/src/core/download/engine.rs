@@ -32,9 +32,9 @@ pub struct DownloadEngine {
     /// M2: persistence boundary — the engine writes checkpoints and
     /// state transitions through the repository, never through SQL.
     repo: Arc<DownloadRepository>,
-    /// M6(上) §26: fired once per completed download (after finalize
-    /// + persist) so higher layers (library import) can react without
-    /// the engine knowing about them.
+    /// M6(上) §26 completion hook: fires once per completed download
+    /// (after finalize + persist) so higher layers such as the library
+    /// import can react without the engine knowing about them.
     on_complete: Mutex<Option<Arc<dyn Fn(&DownloadShared) + Send + Sync>>>,
 }
 
@@ -143,10 +143,7 @@ impl DownloadShared {
 
     /// M6 §26: sets this download's completion hook (copied from the
     /// engine by `start`).
-    pub(crate) fn set_on_complete(
-        &self,
-        hook: Arc<dyn Fn(&DownloadShared) + Send + Sync>,
-    ) {
+    pub(crate) fn set_on_complete(&self, hook: Arc<dyn Fn(&DownloadShared) + Send + Sync>) {
         *self
             .on_complete
             .lock()
@@ -321,9 +318,7 @@ impl DownloadEngine {
             .unwrap_or_else(PoisonError::into_inner) = Some(hook);
     }
 
-    fn engine_on_complete(
-        &self,
-    ) -> Option<Arc<dyn Fn(&DownloadShared) + Send + Sync>> {
+    fn engine_on_complete(&self) -> Option<Arc<dyn Fn(&DownloadShared) + Send + Sync>> {
         self.on_complete
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

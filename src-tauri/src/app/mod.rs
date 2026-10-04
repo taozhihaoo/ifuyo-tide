@@ -110,10 +110,7 @@ pub fn run() {
                         .as_ref()
                         .map(|(_, hex)| hex.as_str()),
                 ) {
-                    crate::diagnostics::warn(
-                        "library.import_failed",
-                        &[("code", err.code())],
-                    );
+                    crate::diagnostics::warn("library.import_failed", &[("code", err.code())]);
                 }
             }
         }));
@@ -132,7 +129,9 @@ pub fn run() {
     {
         let library = library.clone();
         tauri::async_runtime::spawn(async move {
-            match tauri::async_runtime::spawn_blocking(move || library.verify_light_blocking()).await {
+            match tauri::async_runtime::spawn_blocking(move || library.verify_light_blocking())
+                .await
+            {
                 Ok(Ok(changed)) if changed > 0 => {
                     crate::diagnostics::info(
                         "library.startup_verify",

@@ -151,7 +151,7 @@ pub fn scan_root_blocking(
                     .map(|d| d.as_millis() as i64)
                     .unwrap_or(0),
             });
-            if files_seen % 256 == 0 {
+            if files_seen.is_multiple_of(256) {
                 progress(files_seen);
             }
         }

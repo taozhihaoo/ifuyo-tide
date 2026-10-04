@@ -14,19 +14,12 @@ use crate::persistence::repositories::TorrentRepository;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub fn spawn(
-    engine: TorrentEngine,
-    repo: Arc<TorrentRepository>,
-    library: Arc<LibraryService>,
-) {
+pub fn spawn(engine: TorrentEngine, repo: Arc<TorrentRepository>, library: Arc<LibraryService>) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(5)).await;
             if let Err(err) = tick(&engine, &repo, &library).await {
-                crate::diagnostics::warn(
-                    "torrent_monitor.error",
-                    &[("code", err.code())],
-                );
+                crate::diagnostics::warn("torrent_monitor.error", &[("code", err.code())]);
             }
         }
     });
@@ -91,11 +84,9 @@ async fn tick(
                 continue;
             }
             let absolute = record.storage_root.join(&file.relative_path);
-            if let Ok(item) = library.import_torrent_file(
-                &record.storage_root,
-                &absolute,
-                &record.id,
-            ) {
+            if let Ok(item) =
+                library.import_torrent_file(&record.storage_root, &absolute, &record.id)
+            {
                 let _ = item;
             }
         }
