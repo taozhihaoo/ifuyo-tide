@@ -48,6 +48,8 @@ export function LibraryView({
   const [notice, setNotice] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgressDto | null>(null);
   const [scanning, setScanning] = useState(false);
+  // M9(下) §110: honest restore state — Loading until first response.
+  const [listLoaded, setListLoaded] = useState(false);
 
   const query = useCallback(
     (idx: number) => ({
@@ -71,8 +73,10 @@ export function LibraryView({
         ]);
         setRoots(rootsResult);
         setPage(pageResult);
+        setListLoaded(true);
         setError(null);
       } catch (err) {
+        setListLoaded(true);
         setError(String(err));
       }
     },
@@ -197,7 +201,9 @@ export function LibraryView({
         ))}
       </div>
 
-      {!anyRoot ? (
+      {!listLoaded ? (
+        <EmptyState title="Loading library…" hint="Reading the local index." />
+      ) : !anyRoot ? (
         <EmptyState
           title="No library folders"
           hint="Add a folder under Settings → Library Folders, or complete a download — finished downloads enter the library automatically."

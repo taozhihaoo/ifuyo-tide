@@ -35,6 +35,7 @@ export function DownloadsView({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [listLoaded, setListLoaded] = useState(false);
   // M7 §76: dev-only scheduler debug panel — REAL snapshot data only.
   const [sched, setSched] = useState<SchedulerSnapshotDto | null>(null);
 
@@ -95,6 +96,8 @@ export function DownloadsView({
   }, []);
 
   // Initial snapshot (events may have been missed before mount).
+  // M9(下) §110: listLoaded distinguishes "restoring" from an honest
+  // empty state — the view never shows a fake empty list first.
   useEffect(() => {
     void api
       .listDownloads()
@@ -104,8 +107,9 @@ export function DownloadsView({
           for (const d of list) next.set(d.downloadId, d);
           return next;
         });
+        setListLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => setListLoaded(true)); // IPC failure still leaves Loading
   }, []);
 
   // M7 §76/§78: dev diagnostics at 1 s — throttled, real data only.
@@ -182,7 +186,10 @@ export function DownloadsView({
         </button>
       </form>
 
-      {downloads.size === 0 ? (
+      {!listLoaded ? (
+        // §110: first meaningful UI — honest restore state, no fake empty.
+        <EmptyState title="Loading downloads…" hint="Restoring tasks from the local database." />
+      ) : downloads.size === 0 ? (
         <EmptyState
           title="No downloads yet"
           hint="Paste an HTTP/HTTPS URL above. Real M1 downloads with pause/resume/retry."
