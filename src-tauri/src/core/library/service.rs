@@ -18,13 +18,18 @@
 use super::model::{LibraryItem, LibraryRoot, OriginType};
 use super::path;
 use super::repository::LibraryRepository;
-use super::scanner::{self, ScanOutcome};
+use super::scanner::{self, ScanOutcome, ScanStatus};
 use crate::error::{StreamingFailure, TideError};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, PoisonError};
 
 pub struct LibraryService {
     repo: Arc<LibraryRepository>,
+    /// §131: same-root scan single-flight — a root can only be scanned
+    /// by one task at a time; concurrent requests get `BUSY`.
+    scanning: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 fn now_ms() -> i64 {
@@ -37,7 +42,10 @@ fn streaming_err(what: &str) -> TideError {
 
 impl LibraryService {
     pub fn new(repo: Arc<LibraryRepository>) -> LibraryService {
-        LibraryService { repo }
+        LibraryService {
+            repo,
+            scanning: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn repo(&self) -> &Arc<LibraryRepository> {
@@ -89,8 +97,107 @@ impl LibraryService {
 
     // ----- scanning -----------------------------------------------------
 
-    /// Blocking scan — the COMMAND layer must run it on a background
-    /// task (§38) and throttle progress events (§40).
+    /// §131: registers a scan for the root (single-flight) and returns
+    /// its cancellation flag. The caller runs `scan_root_blocking_with`
+    /// on a background task and MUST call `end_scan` afterwards.
+    pub fn begin_scan(&self, root_id: &str) -> Result<Arc<AtomicBool>, TideError> {
+        let mut scanning = self.scanning.lock().unwrap_or_else(PoisonError::into_inner);
+        if scanning.contains_key(root_id) {
+            return Err(TideError::Streaming(StreamingFailure::Busy));
+        }
+        let flag = Arc::new(AtomicBool::new(false));
+        scanning.insert(root_id.to_string(), flag.clone());
+        self.repo
+            .update_root_scan_status(root_id, "scanning", None)?;
+        Ok(flag)
+    }
+
+    /// §130: requests cancellation of the root's running scan. Returns
+    /// false when no scan is running for that root.
+    pub fn cancel_scan(&self, root_id: &str) -> bool {
+        let flag = self
+            .scanning
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(root_id)
+            .cloned();
+        match flag {
+            Some(flag) => {
+                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn end_scan(&self, root_id: &str) {
+        self.scanning
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(root_id);
+    }
+
+    pub fn is_scanning(&self, root_id: &str) -> bool {
+        self.scanning
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(root_id)
+    }
+
+    /// Blocking scan with cancellation support — the COMMAND layer
+    /// must run it on a background task (§38) with throttled progress
+    /// events (§40). A cancelled scan commits nothing and resets the
+    /// root status to idle (§130: no Scanning-forever, no false
+    /// Missing).
+    pub fn scan_root_blocking_with(
+        &self,
+        root_id: &str,
+        cancelled: &AtomicBool,
+        faults: scanner::ScanFaults,
+        mut progress: impl FnMut(u64),
+    ) -> Result<ScanOutcome, TideError> {
+        let root = self
+            .repo
+            .get_root(root_id)?
+            .ok_or_else(|| TideError::NotFound(format!("library root not found: {root_id}")))?;
+        if !root.enabled {
+            return Err(streaming_err("library root is disabled"));
+        }
+        match scanner::scan_root_blocking_with(
+            root_id,
+            &root.path,
+            self.repo(),
+            &mut progress,
+            cancelled,
+            faults,
+        ) {
+            Ok(outcome) => {
+                let status = match outcome.status {
+                    ScanStatus::Cancelled => "idle", // §130: back to rest state
+                    other => other.as_str(),
+                };
+                self.repo
+                    .update_root_scan_status(root_id, status, Some(now_ms()))?;
+                crate::diagnostics::info(
+                    "library.scan_completed",
+                    &[
+                        ("status", outcome.status.as_str()),
+                        ("files", &outcome.files_seen.to_string()),
+                    ],
+                );
+                Ok(outcome)
+            }
+            Err(err) => {
+                self.repo
+                    .update_root_scan_status(root_id, "failed", Some(now_ms()))?;
+                Err(err)
+            }
+        }
+    }
+
+    /// Convenience wrapper (tests + simple flows): no cancellation, no
+    /// injected faults. Single-flight NOT enforced here — callers that
+    /// can race MUST go through begin/end_scan.
     pub fn scan_root_blocking(
         &self,
         root_id: &str,

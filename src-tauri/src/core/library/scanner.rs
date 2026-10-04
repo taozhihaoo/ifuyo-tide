@@ -25,6 +25,8 @@ pub enum ScanStatus {
     Ok,
     Partial,
     Failed,
+    /// §130: cancelled before commit — the database is untouched.
+    Cancelled,
 }
 
 impl ScanStatus {
@@ -33,6 +35,7 @@ impl ScanStatus {
             ScanStatus::Ok => "ok",
             ScanStatus::Partial => "partial",
             ScanStatus::Failed => "failed",
+            ScanStatus::Cancelled => "cancelled",
         }
     }
 }
@@ -47,6 +50,21 @@ pub struct ScanOutcome {
     pub duration_ms: u128,
 }
 
+/// M6(下) §109 failure-injection points (TEST-ONLY). Production always
+/// passes `ScanFaults::default()`; the injected faults exercise
+/// partial-failure and database-consistency paths that a real
+/// filesystem cannot trigger deterministically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ScanFaults {
+    /// One directory entry read fails (→ partial scan, uncovered).
+    pub fail_metadata_read: bool,
+    /// The scan aborts AFTER enumeration, BEFORE any database write
+    /// (→ the DB must be completely untouched).
+    pub fail_before_db_upsert: bool,
+    /// The scan aborts AFTER a successful DB commit (→ data stays).
+    pub fail_after_scan: bool,
+}
+
 /// Progress callback: `files_seen` so far (throttling is the caller's
 /// job, §40).
 pub fn scan_root_blocking(
@@ -55,15 +73,48 @@ pub fn scan_root_blocking(
     repo: &LibraryRepository,
     mut progress: impl FnMut(u64),
 ) -> Result<ScanOutcome, TideError> {
+    scan_root_blocking_with(
+        root_id,
+        root_path,
+        repo,
+        &mut progress,
+        &std::sync::atomic::AtomicBool::new(false),
+        ScanFaults::default(),
+    )
+}
+
+/// §130: the full scan entry point. `cancelled` is checked between
+/// directories and file batches — a cancelled scan commits NOTHING,
+/// so the database stays exactly as it was.
+pub fn scan_root_blocking_with(
+    root_id: &str,
+    root_path: &Path,
+    repo: &LibraryRepository,
+    progress: &mut dyn FnMut(u64),
+    cancelled: &std::sync::atomic::AtomicBool,
+    faults: ScanFaults,
+) -> Result<ScanOutcome, TideError> {
     let started = Instant::now();
     let mut candidates: Vec<ScanCandidate> = Vec::new();
     let mut uncovered: Vec<PathBuf> = Vec::new();
     let mut errors = 0u64;
     let mut files_seen = 0u64;
+    let mut injected_metadata_fault = false;
 
     let mut queue: VecDeque<PathBuf> = VecDeque::new();
     queue.push_back(root_path.to_path_buf());
     while let Some(dir) = queue.pop_front() {
+        // §130: cooperative cancellation between directories.
+        if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(ScanOutcome {
+                status: ScanStatus::Cancelled,
+                files_seen,
+                added: 0,
+                missing: 0,
+                errors,
+                duration_ms: started.elapsed().as_millis(),
+            });
+        }
         let entries = match std::fs::read_dir(&dir) {
             Ok(entries) => entries,
             Err(err) => {
@@ -88,21 +139,22 @@ pub fn scan_root_blocking(
                 errors += 1;
                 continue;
             };
+            // §109: injected metadata-read failure (partial scan path).
+            if faults.fail_metadata_read && !injected_metadata_fault {
+                injected_metadata_fault = true;
+                errors += 1;
+                uncovered.push(entry.path());
+                continue;
+            }
             let Ok(metadata) = entry.metadata() else {
                 errors += 1;
                 continue;
             };
             if metadata.is_dir() {
-                // §12: never traverse reparse points — a junction could
-                // lead anywhere on the system. Checked via
-                // symlink_metadata: DirEntry::metadata may resolve the
-                // junction and drop the reparse attribute. Recorded as
-                // uncovered so previously indexed items inside stay
-                // safe.
                 // §12: never traverse links out of the root. Detection:
-                // modern Rust resolves junctions transparently, so the
-                // reparse attribute is unreliable — canonicalize instead
-                // and compare: a junction resolves to a DIFFERENT path.
+                // modern Rust resolves junctions transparently (and may
+                // drop the reparse attribute), so canonicalize and
+                // compare — a junction resolves to a DIFFERENT path.
                 let is_link = path::canonicalize(&entry.path())
                     .map(|resolved| !path::same_path(&resolved, &entry.path()))
                     .unwrap_or(true);
@@ -158,7 +210,32 @@ pub fn scan_root_blocking(
     }
     progress(files_seen);
 
+    // §109: abort BEFORE any database write — the DB must stay exactly
+    // as it was (failure-injection acceptance criterion).
+    if faults.fail_before_db_upsert {
+        return Err(TideError::Streaming(crate::error::StreamingFailure::Resource(
+            "injected failure before database upsert".into(),
+        )));
+    }
+    if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(ScanOutcome {
+            status: ScanStatus::Cancelled,
+            files_seen,
+            added: 0,
+            missing: 0,
+            errors,
+            duration_ms: started.elapsed().as_millis(),
+        });
+    }
+
     let (added, missing) = repo.apply_scan(root_id, &candidates, &uncovered)?;
+
+    // §109: abort AFTER a successful commit — committed data stays.
+    if faults.fail_after_scan {
+        return Err(TideError::Streaming(crate::error::StreamingFailure::Resource(
+            "injected failure after scan commit".into(),
+        )));
+    }
     let status = if errors > 0 {
         ScanStatus::Partial
     } else {
@@ -183,26 +260,10 @@ fn err_kind(err: &std::io::Error) -> &'static str {
 }
 
 /// Light startup verification (§71/§73): existence + metadata only —
-/// never hashing. Items whose file disappeared become Missing;
-/// reappearing files become Available again.
+/// never hashing. Delegates to the reconciler (§118), which owns all
+/// availability decisions.
 pub fn verify_items_blocking(items: &[(String, PathBuf)], repo: &LibraryRepository) -> u64 {
-    let mut changed = 0u64;
-    for (id, canonical_path) in items {
-        let status = match std::fs::metadata(canonical_path) {
-            Ok(meta) if meta.is_file() => super::model::AvailabilityStatus::Available,
-            Ok(_) => super::model::AvailabilityStatus::Inaccessible,
-            Err(_) => super::model::AvailabilityStatus::Missing,
-        };
-        let item = match repo.get_item(id) {
-            Ok(Some(item)) => item,
-            _ => continue,
-        };
-        if item.availability != status {
-            let _ = repo.set_item_availability(id, status);
-            changed += 1;
-        }
-    }
-    changed
+    super::reconciler::reconcile_items_blocking(items, repo)
 }
 
 /// Category re-export for the service's import path (keeps the

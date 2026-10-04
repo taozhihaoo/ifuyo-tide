@@ -59,6 +59,14 @@ pub enum StreamingFailure {
     HttpStatus(u16),
     #[error("timed out waiting for data to become available")]
     WaitTimeout,
+    /// M6(下) §131: an operation is already running (e.g. same-root
+    /// scan single-flight).
+    #[error("another operation is already in progress")]
+    Busy,
+    /// M6(下) §136: the target file is currently in use (e.g. playing)
+    /// — deletion is refused instead of silently succeeding.
+    #[error("the file is currently in use")]
+    FileInUse,
 }
 
 impl StreamingFailure {
@@ -75,6 +83,8 @@ impl StreamingFailure {
             StreamingFailure::NetworkConnect => "NETWORK_CONNECT",
             StreamingFailure::HttpStatus(_) => "HTTP_STATUS",
             StreamingFailure::WaitTimeout => "WAIT_TIMEOUT",
+            StreamingFailure::Busy => "BUSY",
+            StreamingFailure::FileInUse => "FILE_IN_USE",
         }
     }
 }
@@ -176,6 +186,8 @@ mod tests {
             (S::NetworkConnect, "NETWORK_CONNECT"),
             (S::HttpStatus(503), "HTTP_STATUS"),
             (S::WaitTimeout, "WAIT_TIMEOUT"),
+            (S::Busy, "BUSY"),
+            (S::FileInUse, "FILE_IN_USE"),
         ];
         for (failure, code) in cases {
             assert_eq!(TideError::Streaming(failure).code(), code);

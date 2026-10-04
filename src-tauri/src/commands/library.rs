@@ -182,20 +182,20 @@ pub fn library_scan(
             .filter(|r| r.enabled)
             .collect(),
     };
+    // §131 single-flight: registering a BUSY root fails the whole
+    // command with a structured BUSY error (the frontend stays usable).
+    let mut flags = Vec::with_capacity(roots.len());
     for root in &roots {
-        state
-            .library
-            .repo()
-            .update_root_scan_status(&root.id, "scanning", None)?;
+        let flag = state.library.begin_scan(&root.id)?;
+        flags.push((root.id.clone(), flag));
     }
     let library = state.library.clone();
     tauri::async_runtime::spawn(async move {
-        for root in roots {
-            let root_id = root.id.clone();
+        for (root_id, flag) in flags {
             let throttle = Mutex::new((std::time::Instant::now(), 0u64));
             let root_id_for_progress = root_id.clone();
             let app_for_progress = app.clone();
-            let progress = move |files_seen: u64| {
+            let mut progress = move |files_seen: u64| {
                 let mut guard = throttle.lock().unwrap();
                 let since = guard.0.elapsed();
                 if since >= std::time::Duration::from_millis(300) || files_seen < guard.1 {
@@ -217,10 +217,11 @@ pub fn library_scan(
             let outcome: Result<ScanOutcome, TideError> = tauri::async_runtime::spawn_blocking({
                 let library = library.clone();
                 let root_id = root_id.clone();
-                move || library.scan_root_blocking(&root_id, progress)
+                move || library.scan_root_blocking_with(&root_id, &flag, Default::default(), &mut progress)
             })
             .await
             .unwrap_or_else(|_| Err(TideError::Internal("scan task failed".into())));
+            library.end_scan(&root_id);
             let dto = match outcome {
                 Ok(o) => ScanProgressDto {
                     root_id: root_id.clone(),
@@ -243,6 +244,14 @@ pub fn library_scan(
         }
     });
     Ok(())
+}
+
+/// §130: requests cancellation of the root's running scan. The scan
+/// stops between directories and commits NOTHING — the database stays
+/// consistent and the root returns to idle.
+#[tauri::command]
+pub fn library_cancel_scan(state: State<'_, AppState>, root_id: String) -> bool {
+    state.library.cancel_scan(&root_id)
 }
 
 #[derive(Debug, Serialize)]
@@ -296,7 +305,12 @@ pub fn library_remove_item(state: State<'_, AppState>, item_id: String) -> Resul
 /// the item id only. Any playback session on this item is invalidated.
 #[tauri::command]
 pub fn library_delete_item(state: State<'_, AppState>, item_id: String) -> Result<(), TideError> {
-    state.playback.close_for_owner(&item_id);
+    // M6(下) §136: an active playback session means the file is IN
+    // USE — deletion is REFUSED (structured FILE_IN_USE), never done
+    // silently behind a playing video.
+    if state.playback.has_session_for_owner(&item_id) {
+        return Err(TideError::Streaming(crate::error::StreamingFailure::FileInUse));
+    }
     super::ipc_result(
         "library_delete_item",
         state.library.delete_item_from_disk(&item_id),

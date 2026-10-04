@@ -169,6 +169,14 @@ impl PlaybackManager {
         removed
     }
 
+    /// M6(下) §136: is any session owned by this task/item still
+    /// alive? (Used to refuse file deletion while playing instead of
+    /// silently closing.)
+    pub fn has_session_for_owner(&self, owner: &str) -> bool {
+        let sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        sessions.values().any(|s| s.owner.as_deref() == Some(owner))
+    }
+
     /// §102: the owning task is gone — invalidate every session it
     /// opened so no session outlives its data.
     pub fn close_for_owner(&self, owner: &str) -> usize {

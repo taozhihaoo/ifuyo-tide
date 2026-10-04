@@ -14,6 +14,7 @@
 pub mod classifier;
 pub mod model;
 pub mod path;
+pub mod reconciler;
 pub mod repository;
 pub mod scanner;
 pub mod service;

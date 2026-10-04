@@ -217,6 +217,7 @@ pub fn run() {
             commands::library::library_remove_root,
             commands::library::library_set_root_enabled,
             commands::library::library_scan,
+            commands::library::library_cancel_scan,
             commands::library::library_list_items,
             commands::library::library_get_item,
             commands::library::library_refresh_item,
