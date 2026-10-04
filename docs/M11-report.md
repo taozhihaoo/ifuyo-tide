@@ -26,7 +26,11 @@ machine validation (KI-5).
 - version **0.2.0-rc.1** (package.json = tauri.conf.json =
   Cargo.toml = exe resource — TEST RESULT)
 - commit: recorded in `release/RELEASE-MANIFEST.json`; tag
-  `v0.2.0-rc.1`
+  `v0.2.0-rc.1`. The packaged exe was built after c6a238c (last
+  code-affecting commit); commits between that build and the RC tag
+  touch docs/scripts only (FACT — `git diff c6a238c..<rc> --stat`
+  lists no Rust/frontend source), so the binary is the RC commit's
+  binary.
 - branch `main`; build ID = commit + toolchain block in the manifest
 - platform windows / arch x64 / profile release
 - toolchain (TOOL RESULT): rustc/cargo 1.99.0, node v24.19.0,
