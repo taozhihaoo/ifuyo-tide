@@ -4,12 +4,12 @@
 
 A calm, local-first downloader and progressive media player for Windows.
 
-> **Current status: M11 — Release Candidate 0.2.0-rc.1 (RC CONDITIONAL).**
-> The M0–M10 feature set is frozen, packaged and validated: real
-> NSIS installer, executed install/upgrade/uninstall matrix with data
-> preservation, automated release smoke, SHA-256 + manifest +
-> dependency inventory in `release/`. P0 = 0; open items are tracked
-> in `KNOWN_ISSUES.md`. See `docs/M11-report.md`.
+> **Current status: 1.0.0 — stable release.**
+> The M0–M11 feature set is frozen and validated end-to-end on real
+> installers: fresh install, upgrade, uninstall, crash recovery,
+> data preservation, security regression. P0 = 0; open items with
+> dispositions are tracked in `KNOWN_ISSUES.md`. See
+> `CHANGELOG.md`, `docs/release-1.0.0.md` and `docs/M12-report.md`.
 
 ---
 
@@ -23,6 +23,21 @@ Tide is **local-first**: no account, no cloud backend, no telemetry, no
 upload of your data.
 
 ## Planned features
+
+## Usage
+
+1. **Add a source**: paste an HTTP(S) URL in Downloads, or drop a
+   .torrent file / magnet link (or use `tide://add`).
+2. **Download**: pause/resume anytime; completed files are verified
+   (checksum) and imported into the Library automatically.
+3. **Watch while downloading**: press Play on a running task —
+   Tide streams progressively and seeks into not-yet-downloaded
+   regions on demand.
+4. **Library**: browse, re-watch, reveal files in Explorer.
+5. **Settings**: download directory, bandwidth limits, task
+   priorities, Windows behaviors (tray, autostart, notifications).
+
+## Milestones
 
 | Milestone | Feature | Status |
 |---|---|---|
@@ -39,9 +54,30 @@ upload of your data.
 | M9 | Product polish | **done** — error UX, boundaries, loading states, strings centralization |
 | M10 | Security hardening | complete |
 | M11 | Release Candidate 0.2.0-rc.1 | complete (RC CONDITIONAL) |
-| M12 | 1.0 | planned |
+| M12 | 1.0.0 stable release | **complete** |
 
-## Installing, upgrading, uninstalling (RC)
+## Requirements
+
+- Windows 10 or 11, x64.
+- WebView2 Runtime (auto-installed by the setup EXE if missing; it is
+  preinstalled on up-to-date Windows 10/11).
+- No admin rights required (per-user install). No Node/Rust/Python
+  or other developer tools.
+
+## Supported media
+
+Playback uses the WebView2/Edge media stack of the host machine:
+
+| Container | Codec | Status |
+|---|---|---|
+| MP4 | H.264 / AAC | Supported |
+| WebM | VP9 / Opus | Supported |
+| WebM | AV1 / Opus | Conditionally supported (varies by machine) |
+| MKV | HEVC etc. | Conditionally supported (varies by machine) |
+
+Unsupported codecs produce a structured error, never a crash.
+
+## Installing, upgrading, uninstalling
 
 - **Install**: run `ifuyo-tide_0.2.0-rc.1_x64-setup.exe` (NSIS,
   per-user, no admin rights; WebView2 bootstrapped if missing).
@@ -55,7 +91,21 @@ upload of your data.
   downloads are preserved by default (explicit checkbox to also
   remove app data).
 - **Known limitations**: unsigned installer (SmartScreen prompt),
-  no built-in updater yet — see `KNOWN_ISSUES.md`.
+  no built-in updater — see `KNOWN_ISSUES.md`.
+
+## Troubleshooting
+
+- **App does not open after an interrupted install or corrupt app
+  data**: reinstall over the existing installation; if it still
+  fails, back up `%LOCALAPPDATA%\ifuyo\Tide\database	ide.db`
+  and remove the `%LOCALAPPDATA%\ifuyo\Tide` folder (your
+  downloaded files are elsewhere and are not affected).
+- **A video fails to play**: check the codec row above — Tide shows
+  a structured decode error for unsupported codecs; try MP4 (H.264).
+- **Downloads stall**: check the global/per-task bandwidth limits in
+  Settings, and the task priority in the Downloads view.
+- **Installer warning (SmartScreen)**: the 1.0 installer is not yet
+  code-signed; verify the SHA-256 in `release/SHA256SUMS.txt`.
 
 ## Architecture overview
 
