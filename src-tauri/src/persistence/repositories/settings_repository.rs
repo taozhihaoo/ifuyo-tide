@@ -28,6 +28,30 @@ impl SettingsRepository {
         Ok(result)
     }
 
+    /// All key/value pairs whose key starts with `prefix` (M7: the
+    /// `sched:` namespace for user priorities + bandwidth prefs).
+    pub fn get_by_prefix(
+        &self,
+        conn: &Connection,
+        prefix: &str,
+    ) -> Result<Vec<(String, String)>, TideError> {
+        let mut stmt = conn
+            .prepare("SELECT key, value FROM settings WHERE key LIKE ?1 ESCAPE '\' ORDER BY key")?;
+        let rows = stmt.query_map([format!("{prefix}%")], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    pub fn delete(&self, conn: &Connection, key: &str) -> Result<(), TideError> {
+        conn.execute("DELETE FROM settings WHERE key = ?1", [key])?;
+        Ok(())
+    }
+
     pub fn set(&self, conn: &Connection, key: &str, value: &str) -> Result<(), TideError> {
         conn.execute(
             "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)

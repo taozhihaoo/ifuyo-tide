@@ -13,8 +13,8 @@
 
 use super::config::{SchedulerConfig, UserPriority};
 use super::model::{
-    AllocationDecision, EngineKind, PlaybackSchedulingState, PlaybackView, SchedulerSnapshot,
-    TaskRunState, TaskView,
+    AllocationDecision, DecisionReason, EngineKind, PlaybackSchedulingState, PlaybackView,
+    ReasonCode, SchedulerSnapshot, TaskRunState, TaskView,
 };
 use super::policy;
 use crate::core::download::DownloadEngine;
@@ -193,6 +193,58 @@ impl SchedulerRuntime {
     /// immediately.
     pub fn trigger(&self) {
         self.trigger.store(true, Ordering::Relaxed);
+    }
+
+    /// §79: a fresh snapshot from the provider (for the IPC DTO).
+    pub fn collect_snapshot(&self) -> SchedulerSnapshot {
+        self.provider.collect()
+    }
+
+    /// §79/§76: the LATEST applied decisions (the last diff).
+    pub fn last_applied(&self) -> Vec<AllocationDecision> {
+        let rates = self
+            .last_rates
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut out: Vec<AllocationDecision> = Vec::new();
+        for (task_id, bps) in rates.iter() {
+            out.push(AllocationDecision {
+                task_id: task_id.clone(),
+                engine: EngineKind::Http,
+                priority_class: super::config::PriorityClass::Normal,
+                effective_weight: 0.0,
+                allocated_bps: *bps,
+                min_bps: 0,
+                target_bps: 0,
+                session_id: None,
+                reason: DecisionReason {
+                    code: ReasonCode::FairShare,
+                    detail: "last applied rate".into(),
+                },
+            });
+        }
+        let t = *self
+            .last_torrent_rate
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if t > 0 {
+            out.push(AllocationDecision {
+                task_id: "*torrent-session*".into(),
+                engine: EngineKind::Torrent,
+                priority_class: super::config::PriorityClass::Normal,
+                effective_weight: 0.0,
+                allocated_bps: t,
+                min_bps: 0,
+                target_bps: 0,
+                session_id: None,
+                reason: DecisionReason {
+                    code: ReasonCode::FairShare,
+                    detail: "last applied torrent session rate".into(),
+                },
+            });
+        }
+        out.sort_by(|a, b| a.task_id.cmp(&b.task_id));
+        out
     }
 
     /// §17/§55: one reconciliation pass. Returns the decisions APPLIED

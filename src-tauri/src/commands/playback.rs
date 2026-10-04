@@ -86,8 +86,17 @@ pub fn report_playback_position(
     state: State<'_, AppState>,
     session_id: String,
     position_ms: u64,
+    duration_ms: Option<u64>,
+    buffered_ahead_secs: Option<f64>,
 ) -> bool {
-    state.playback.report_position(&session_id, position_ms)
+    // M7(上) §8: duration + REAL browser buffered-ahead feed the
+    // scheduler's buffer model — all element-native values.
+    state.playback.report_playback_telemetry(
+        &session_id,
+        position_ms,
+        duration_ms,
+        buffered_ahead_secs,
+    )
 }
 
 /// The player seeked: demands queued for the old position are obsolete

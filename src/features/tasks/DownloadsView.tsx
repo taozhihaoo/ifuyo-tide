@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import * as api from "./downloadApi";
+import {
+  getSchedulerSnapshot,
+  setTaskPriority,
+  type SchedulerSnapshotDto,
+  type UserPriority,
+} from "../player/playbackApi";
 import type { DownloadDto } from "./downloadApi";
 
 /**
@@ -21,6 +27,8 @@ export function DownloadsView({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  // M7 §76: dev-only scheduler debug panel — REAL snapshot data only.
+  const [sched, setSched] = useState<SchedulerSnapshotDto | null>(null);
 
   useEffect(() => {
     let unlisten: UnlistenLike | null = null;
@@ -64,6 +72,17 @@ export function DownloadsView({
         });
       })
       .catch(() => {});
+  }, []);
+
+  // M7 §76/§78: dev diagnostics at 1 s — throttled, real data only.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const timer = window.setInterval(() => {
+      getSchedulerSnapshot()
+        .then(setSched)
+        .catch(() => {});
+    }, 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const start = useCallback(async () => {
@@ -139,13 +158,49 @@ export function DownloadsView({
           ))}
         </ul>
       )}
+
+      {import.meta.env.DEV && sched && <SchedulerDebug sched={sched} />}
     </section>
+  );
+}
+
+/// M7 §76: dev-only scheduler debug — allocations + REAL decision
+/// reasons from the backend snapshot. Never rendered in release.
+function SchedulerDebug({ sched }: { sched: SchedulerSnapshotDto }) {
+  if (sched.tasks.length === 0 && sched.decisions.length === 0) return null;
+  return (
+    <div className="player-diagnostics" data-testid="scheduler-debug">
+      <div>global cap: {sched.globalBandwidthBps != null ? formatBytes(sched.globalBandwidthBps) + "/s" : "unlimited"}</div>
+      {sched.tasks.map((t) => {
+        const d = sched.decisions.find((x) => x.taskId === t.taskId);
+        return (
+          <div key={t.taskId}>
+            {t.taskId.slice(0, 8)}… · {t.engine} · {t.state} · prio {t.userPriority ?? "—"} ·{" "}
+            {formatBytes(t.smoothedBps)}/s
+            {d != null && (
+              <>
+                {" "}
+                → {d.priorityClass} {formatBytes(d.allocatedBps)}/s ({d.reasonCode}: {d.reasonDetail})
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
 interface UnlistenLike {
   (): void;
 }
+
+const PRIORITIES: Array<{ value: UserPriority; label: string }> = [
+  { value: "highest", label: "Highest" },
+  { value: "high", label: "High" },
+  { value: "normal", label: "Normal" },
+  { value: "low", label: "Low" },
+  { value: "background", label: "Background" },
+];
 
 function DownloadCard({
   d,
@@ -157,6 +212,7 @@ function DownloadCard({
   const active = d.state === "running" || d.state === "created";
   const paused = d.state === "paused";
   const playable = d.downloadedBytes > 0;
+  const [priority, setPriority] = useState<UserPriority>("normal");
   return (
     <li className="task-card" data-testid="download-card">
       <div className="task-main">
@@ -223,6 +279,24 @@ function DownloadCard({
           >
             Cancel
           </button>
+        )}
+        {active && (
+          <select
+            className="priority-select"
+            aria-label="Download priority"
+            value={priority}
+            onChange={(e) => {
+              const value = e.target.value as UserPriority;
+              setPriority(value);
+              void setTaskPriority(d.downloadId, value).catch(() => {});
+            }}
+          >
+            {PRIORITIES.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
         )}
         {d.state === "failed" && (
           <button

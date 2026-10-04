@@ -55,9 +55,66 @@ export function getActivePlaybackSession(): Promise<PlaybackSessionInfo | null> 
   return call<PlaybackSessionInfo | null>("get_active_playback_session");
 }
 
-/** M5 §36: throttled position report for session-scoped resume. */
-export function reportPlaybackPosition(sessionId: string, positionMs: number): Promise<boolean> {
-  return call<boolean>("report_playback_position", { sessionId, positionMs });
+/** M5 §36 + M7 §8: throttled telemetry report — position for resume,
+ * duration + REAL browser-buffered-ahead for the scheduler's buffer
+ * model. All values come from the media element. */
+export function reportPlaybackPosition(
+  sessionId: string,
+  positionMs: number,
+  durationMs: number | null,
+  bufferedAheadSecs: number | null,
+): Promise<boolean> {
+  return call<boolean>("report_playback_position", {
+    sessionId,
+    positionMs,
+    durationMs,
+    bufferedAheadSecs: bufferedAheadSecs == null ? null : Number(bufferedAheadSecs.toFixed(2)),
+  });
+}
+
+/** M7 §78: scheduler intent + snapshot DTO (§79). */
+export type UserPriority = "highest" | "high" | "normal" | "low" | "background";
+
+export function setTaskPriority(taskId: string, priority: UserPriority): Promise<void> {
+  return call<void>("scheduler_set_task_priority", { taskId, priority });
+}
+
+export function setGlobalBandwidthLimit(bps: number): Promise<void> {
+  return call<void>("scheduler_set_global_bandwidth_limit", { bps });
+}
+
+export interface SchedulerTaskDto {
+  taskId: string;
+  engine: string;
+  state: string;
+  userPriority: string | null;
+  smoothedBps: number;
+}
+
+export interface SchedulerPlaybackDto {
+  sessionId: string;
+  taskId: string | null;
+  state: string;
+  bufferedAheadSecs: number | null;
+}
+
+export interface SchedulerDecisionDto {
+  taskId: string;
+  priorityClass: string;
+  allocatedBps: number;
+  reasonCode: string;
+  reasonDetail: string;
+}
+
+export interface SchedulerSnapshotDto {
+  globalBandwidthBps: number | null;
+  tasks: SchedulerTaskDto[];
+  playback: SchedulerPlaybackDto[];
+  decisions: SchedulerDecisionDto[];
+}
+
+export function getSchedulerSnapshot(): Promise<SchedulerSnapshotDto> {
+  return call<SchedulerSnapshotDto>("scheduler_get_snapshot");
 }
 
 /**

@@ -731,3 +731,14 @@ button:focus-visible {
   letter-spacing: 0.06em;
   margin-bottom: 4px;
 }
+
+/* ---------- M7 scheduler ---------- */
+
+.priority-select {
+  font-size: 11px;
+  padding: 1px 4px;
+}
+
+.bandwidth-input {
+  width: 90px;
+}

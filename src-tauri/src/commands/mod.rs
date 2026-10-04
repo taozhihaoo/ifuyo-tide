@@ -11,6 +11,7 @@ pub mod app_info;
 pub mod download;
 pub mod library;
 pub mod playback;
+pub mod scheduler;
 pub mod settings;
 pub mod spike;
 pub mod tasks;

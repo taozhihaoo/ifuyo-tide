@@ -196,15 +196,16 @@ describe("PlaybackController", () => {
     expect(controller.getState()).toBe("paused");
   });
 
-  it("reports position through the hook (§36)", () => {
+  it("reports position + duration + buffered through the hook (§36/M7)", () => {
     vi.useFakeTimers();
     const report = vi.fn();
     const element = new MockMediaElement();
+    element.currentTime = 5;
+    (element as { buffered: TimeRanges }).buffered = makeRanges([[0, 8]]);
     const controller = new PlaybackController(element, { reportPosition: report });
     controller.load(SESSION);
-    element.currentTime = 5;
     vi.advanceTimersByTime(6_000);
-    expect(report).toHaveBeenCalledWith("s1", 5000);
+    expect(report).toHaveBeenCalledWith("s1", 5000, 100_000, 3);
     vi.useRealTimers();
   });
 });

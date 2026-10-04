@@ -203,6 +203,10 @@ pub fn run() {
         global_bandwidth_bps,
     );
 
+    // M7(上) §72: load persisted scheduler preferences (user priorities
+    // + bandwidth limit) into the runtime registries.
+    commands::scheduler::load_persisted(&app_state);
+
     // M0.5 SPIKE: separate managed state for experiment infrastructure.
     let spike_state = crate::spike::state::SpikeState::default();
 
@@ -238,6 +242,10 @@ pub fn run() {
             commands::torrent::resume_torrent,
             commands::torrent::remove_torrent,
             commands::torrent::delete_torrent_data,
+            // M7(上) scheduler commands
+            commands::scheduler::scheduler_set_task_priority,
+            commands::scheduler::scheduler_set_global_bandwidth_limit,
+            commands::scheduler::scheduler_get_snapshot,
             // M6(上) library commands
             commands::library::library_list_roots,
             commands::library::library_add_root,

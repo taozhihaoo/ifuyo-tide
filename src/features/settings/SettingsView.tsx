@@ -10,6 +10,7 @@ import {
   setRootEnabled,
   type LibraryRootDto,
 } from "../library/libraryApi";
+import { setGlobalBandwidthLimit } from "../player/playbackApi";
 
 /**
  * Settings: the download directory (M0) and the M6(上) library
@@ -23,6 +24,7 @@ export function SettingsView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfoDto | null>(null);
   const [roots, setRoots] = useState<LibraryRootDto[]>([]);
+  const [bandwidthInput, setBandwidthInput] = useState(0);
 
   useEffect(() => {
     void (async () => {
@@ -38,6 +40,21 @@ export function SettingsView() {
       }
     })();
   }, []);
+
+  const saveBandwidth = useCallback(async () => {
+    setError(null);
+    setNotice(null);
+    try {
+      // MB/s → bytes/sec; 0 = unlimited.
+      const bps = Math.max(0, Math.round(bandwidthInput * 1024 * 1024));
+      await setGlobalBandwidthLimit(bps);
+      setNotice(
+        bps === 0 ? "Bandwidth limit removed (unlimited)." : `Bandwidth limit set to ${bandwidthInput} MB/s.`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, [bandwidthInput]);
 
   const chooseDirectory = useCallback(async () => {
     setError(null);
@@ -148,6 +165,32 @@ export function SettingsView() {
             <span className="setting-help">Disabled placeholder — Windows integration is M8.</span>
           </div>
           <input type="checkbox" disabled aria-label="Start on boot" />
+        </div>
+      </div>
+
+      <div className="settings-group">
+        <div className="settings-group-title">Bandwidth (M7)</div>
+        <div className="setting-row">
+          <div className="setting-text">
+            <span className="setting-label">Global download limit</span>
+            <span className="setting-help">
+              MB/s — playback (emergency) may still use up to this cap. 0 = unlimited.
+            </span>
+          </div>
+          <div className="task-actions">
+            <input
+              type="number"
+              min={0}
+              step={1}
+              className="bandwidth-input"
+              aria-label="Global download limit in megabytes per second"
+              value={bandwidthInput}
+              onChange={(e) => setBandwidthInput(Number(e.target.value) || 0)}
+            />
+            <button type="button" className="btn btn-small" onClick={() => void saveBandwidth()}>
+              Apply
+            </button>
+          </div>
         </div>
       </div>
 

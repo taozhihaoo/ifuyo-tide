@@ -41,8 +41,10 @@ export function PlayerPage({
   const bindVideo = useCallback((el: HTMLVideoElement | null) => {
     if (el == null || controllerRef.current != null) return;
     const instance = new PlaybackController(el, {
-      reportPosition: (sessionId, positionMs) => {
-        void reportPlaybackPosition(sessionId, positionMs).catch(() => {});
+      reportPosition: (sessionId, positionMs, durationMs, bufferedAheadSecs) => {
+        void reportPlaybackPosition(sessionId, positionMs, durationMs, bufferedAheadSecs).catch(
+          () => {},
+        );
       },
     });
     controllerRef.current = instance;

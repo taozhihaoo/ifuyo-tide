@@ -113,7 +113,14 @@ export class PlaybackController {
   private bufferingStartedAt: number | null = null;
   private firstFrameAt: number | null = null;
   private lastReportedPositionMs = 0;
-  private readonly reportPosition: ((sessionId: string, positionMs: number) => void) | null;
+  private readonly reportPosition:
+    | ((
+          sessionId: string,
+          positionMs: number,
+          durationMs: number | null,
+          bufferedAheadSecs: number | null,
+      ) => void)
+    | null;
   readonly metrics: PlaybackMetrics = {
     openStartedAt: null,
     timeToMetadataMs: null,
@@ -128,7 +135,14 @@ export class PlaybackController {
 
   constructor(
     element: MediaElementLike,
-    hooks?: { reportPosition?: (sessionId: string, positionMs: number) => void },
+    hooks?: {
+      reportPosition?: (
+        sessionId: string,
+        positionMs: number,
+        durationMs: number | null,
+        bufferedAheadSecs: number | null,
+      ) => void;
+    },
   ) {
     this.element = element;
     this.reportPosition = hooks?.reportPosition ?? null;
@@ -311,8 +325,14 @@ export class PlaybackController {
       const ms = Math.round(t * 1000);
       if (Math.abs(ms - this.lastReportedPositionMs) < 1) return;
       this.lastReportedPositionMs = ms;
+      const dur = this.element.duration;
       try {
-        report(sessionId, ms);
+        report(
+          sessionId,
+          ms,
+          Number.isFinite(dur) ? Math.round(dur * 1000) : null,
+          bufferedAheadOf(this.element.buffered, t),
+        );
       } catch {
         // Position reporting is best-effort (M5 §36).
       }
