@@ -306,6 +306,8 @@ pub fn run() {
             commands::tasks::update_task_state,
             commands::settings::get_settings,
             commands::settings::set_download_directory,
+            commands::settings::get_onboarding_completed,
+            commands::settings::set_onboarding_completed,
             // M1 HTTP download commands
             commands::download::start_http_download,
             commands::download::pause_download,

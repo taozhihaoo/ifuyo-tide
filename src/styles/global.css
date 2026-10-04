@@ -787,3 +787,29 @@ button:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------- M9 welcome flow (§6) ---------- */
+
+.welcome {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg, #1a1a1e);
+}
+
+.welcome-card {
+  max-width: 460px;
+  padding: var(--space-4) var(--space-4) var(--space-4);
+  border: 1px solid var(--color-border, rgba(128, 128, 128, 0.3));
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.welcome-tagline {
+  color: var(--text-dim, #999);
+  margin: 0;
+}

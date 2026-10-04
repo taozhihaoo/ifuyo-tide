@@ -21,6 +21,36 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<SettingsDto, TideError
     ipc_result("get_settings", result)
 }
 
+const KEY_ONBOARDED: &str = "onboarding_completed";
+
+/// M9(上) §6: has the first-launch welcome flow been completed? Absent
+/// key = first launch (default false — a fresh install shows the
+/// welcome exactly once).
+#[tauri::command]
+pub fn get_onboarding_completed(state: State<'_, AppState>) -> Result<bool, TideError> {
+    let result = state.with_conn(|conn| {
+        let done = state
+            .settings_repository
+            .get(conn, KEY_ONBOARDED)?
+            .map(|v| v == "1")
+            .unwrap_or(false);
+        Ok(done)
+    });
+    ipc_result("get_onboarding_completed", result)
+}
+
+/// M9(上) §6: marks the welcome flow complete (persisted — never shown
+/// again on subsequent launches, §6 "已有设置则跳过").
+#[tauri::command]
+pub fn set_onboarding_completed(state: State<'_, AppState>) -> Result<(), TideError> {
+    let result = state.with_conn(|conn| {
+        state
+            .settings_repository
+            .set(conn, KEY_ONBOARDED, "1")
+    });
+    ipc_result("set_onboarding_completed", result)
+}
+
 #[tauri::command]
 pub fn set_download_directory(
     state: State<'_, AppState>,

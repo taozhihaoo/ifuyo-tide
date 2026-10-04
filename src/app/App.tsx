@@ -17,9 +17,12 @@ import {
   onLaunchRequest,
   type LaunchRequestKind,
 } from "../features/settings/windowsApi";
+import { WelcomeFlow } from "../features/onboarding/WelcomeFlow";
+import { getOnboardingCompleted } from "../features/onboarding/onboardingApi";
 import { SpikeView } from "../features/spike/SpikeView";
 import { DownloadsView } from "../features/tasks/DownloadsView";
 import { TorrentsView } from "../features/torrents/TorrentsView";
+import { getSettings } from "../lib/api";
 import { spikeAutorunEnabled } from "../lib/spikeApi";
 
 export default function App() {
@@ -29,6 +32,8 @@ export default function App() {
   // playSource; the Player view renders it.
   const [session, setSession] = useState<PlaybackSessionInfo | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  // M9(上) §6: first-launch welcome — null until the backend answers.
+  const [onboarded, setOnboarded] = useState<boolean | null>(null);
   // M8 §45/§46: external sources enter the Add-Source flow — a
   // LaunchRequest is NOT a task; the user confirms before creation.
   const [notice, setNotice] = useState<string | null>(null);
@@ -95,6 +100,14 @@ export default function App() {
   // M8 §73/§74: requests that arrived BEFORE the frontend was ready are
   // drained exactly once; live requests arrive via app://launch-request.
   useEffect(() => {
+    // §6: skip the welcome when settings already exist (upgraded
+    // installs) or when the flow was already completed.
+    Promise.all([getOnboardingCompleted(), getSettings()])
+      .then(([done, settings]) => setOnboarded(done || settings.downloadDir != null))
+      .catch(() => setOnboarded(true)); // IPC failure → skip welcome
+  }, []);
+
+  useEffect(() => {
     drainLaunchRequests()
       .then((requests) => {
         for (const request of requests) intakeSource(request.kind);
@@ -159,6 +172,12 @@ export default function App() {
           </div>
         )}
         {notice && <div className="banner banner-ok" role="status">{notice}</div>}
+        {/* M9(上) §6: welcome flow overlays the shell exactly once. */}
+        {onboarded === false && (
+          <WelcomeFlow
+            onDone={() => setOnboarded(true)}
+          />
+        )}
         {pendingSource && (
           <div className="banner banner-ok" role="status">
             External source received.{" "}

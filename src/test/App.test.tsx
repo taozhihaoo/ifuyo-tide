@@ -30,6 +30,11 @@ vi.mock("../features/settings/windowsApi", () => ({
   onLaunchRequest: vi.fn().mockResolvedValue(() => {}),
 }));
 
+vi.mock("../features/onboarding/onboardingApi", () => ({
+  getOnboardingCompleted: vi.fn().mockResolvedValue(true),
+  setOnboardingCompleted: vi.fn().mockResolvedValue(undefined),
+}));
+
 const listDownloadsMock = vi.mocked(api.listDownloads);
 const startDownloadMock = vi.mocked(api.startDownload);
 const onProgressMock = vi.mocked(api.onDownloadProgress);
