@@ -27,6 +27,7 @@ pub mod bandwidth;
 pub mod config;
 pub mod model;
 pub mod policy;
+pub mod range;
 pub mod runtime;
 
 pub use adapters::{EngineAdapter, HttpAdapter, TorrentAdapter};
@@ -37,4 +38,5 @@ pub use model::{
     PlaybackSchedulingState, PlaybackView, ReasonCode, SchedulerSnapshot, TaskRunState, TaskView,
 };
 pub use policy::{classify_playback, compute};
+pub use range::RangeSet;
 pub use runtime::{AppSnapshotProvider, SchedulerRuntime, SnapshotProvider};

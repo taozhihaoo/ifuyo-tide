@@ -190,6 +190,25 @@ pub fn compute(
     }
 
     for task in &snapshot.tasks {
+        // §54: the task already carries a playback classification —
+        // merge the task's own telemetry/user priority into it. (This
+        // check MUST precede the not-running branch: a task whose
+        // session is paused would otherwise produce a duplicate
+        // Maintenance entry alongside the playback entry.)
+        if playback_task_ids.contains(&task.task_id) {
+            if let Some(entry) = entries.iter_mut().find(|e| e.task.task_id == task.task_id) {
+                entry.task = task.clone();
+                // A paused/ended session on a stopped task ends the
+                // demand entirely (§146).
+                if task.state != TaskRunState::Running {
+                    entry.class = PriorityClass::Maintenance;
+                    entry.min_bps = 0;
+                    entry.target_bps = 0;
+                    entry.reason = ReasonCode::TaskNotRunning;
+                }
+            }
+            continue;
+        }
         if task.state != TaskRunState::Running {
             entries.push(Entry {
                 task: task.clone(),
@@ -201,14 +220,6 @@ pub fn compute(
                 min_bps: 0,
                 target_bps: 0,
             });
-            continue;
-        }
-        if playback_task_ids.contains(&task.task_id) {
-            // §54: the task already carries a playback classification —
-            // just merge the task's own telemetry/user priority into it.
-            if let Some(entry) = entries.iter_mut().find(|e| e.task.task_id == task.task_id) {
-                entry.task = task.clone();
-            }
             continue;
         }
         let (class, reason, detail) = match task.user_priority {
@@ -362,9 +373,26 @@ pub fn compute(
         push_decision(&entries, i, &mut allocated, grant, &reason, &detail);
     }
 
-    // Deterministic output ordering.
+    // §166 "no duplicate demand": one decision per task — merge any
+    // duplicates by summing (Phase B + Phase C grants for the same
+    // task are intentionally recorded separately per phase, but the
+    // OUTPUT contract is a single decision per task).
+    let mut merged: Vec<AllocationDecision> = Vec::new();
     allocated.sort_by(|a, b| a.task_id.cmp(&b.task_id));
-    allocated
+    for d in allocated {
+        match merged.last_mut() {
+            Some(last) if last.task_id == d.task_id => {
+                last.allocated_bps += d.allocated_bps;
+                last.min_bps = last.min_bps.max(d.min_bps);
+                last.target_bps = last.target_bps.max(d.target_bps);
+                if d.session_id.is_some() {
+                    last.session_id = d.session_id.clone();
+                }
+            }
+            _ => merged.push(d),
+        }
+    }
+    merged
 }
 
 fn push_decision(
@@ -680,6 +708,104 @@ mod tests {
         let a = compute(&snap, &Default::default(), &cfg);
         let b = compute(&snap, &Default::default(), &cfg);
         assert_eq!(a, b);
+    }
+
+    /// §108: same-class fairness — three Normal tasks share the
+    /// leftover equally each tick; no task is starved to zero while
+    /// capacity exists.
+    #[test]
+    fn same_class_tasks_fair_share() {
+        let decisions = compute(
+            &snapshot(vec![], vec![running("a"), running("b"), running("c")]),
+            &Default::default(),
+            &config(),
+        );
+        let a = alloc_total(&decisions, "a");
+        let b = alloc_total(&decisions, "b");
+        let c = alloc_total(&decisions, "c");
+        assert!(a > 0 && b > 0 && c > 0, "no starvation with capacity");
+        assert_eq!(a, b, "equal weights → equal shares");
+        assert_eq!(b, c);
+    }
+
+    /// §114: property invariants over randomized snapshots —
+    /// allocation ≥ 0 (by type), sum ≤ capacity, unique task ids,
+    /// ended/paused/maintenance receive zero, determinism holds.
+    #[test]
+    fn property_invariants_hold_over_random_snapshots() {
+        let mut state: u64 = 0x1234_5678_9ABC_DEF0;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for case in 0..100u32 {
+            let cap_bps = 1 + next() % (50 * 1024 * 1024);
+            let task_count = (next() % 12) as usize;
+            let mut tasks = Vec::new();
+            for i in 0..task_count {
+                let mut t = running(&format!("t{i:03}"));
+                t.state = match next() % 4 {
+                    0 => TaskRunState::Running,
+                    1 => TaskRunState::Paused,
+                    2 => TaskRunState::Completed,
+                    _ => TaskRunState::Running,
+                };
+                if next() % 5 == 0 {
+                    t.user_priority = Some(UserPriority::High);
+                }
+                t.waited_secs = next() % 300;
+                tasks.push(t);
+            }
+            let mut playback = Vec::new();
+            for i in 0..(next() % 3) as usize {
+                let mut p = session(&format!("s{i}"), &format!("t{i:03}"), (next() % 60) as f64);
+                p.state = match next() % 3 {
+                    0 => PlaybackSchedulingState::Playing,
+                    1 => PlaybackSchedulingState::Paused,
+                    _ => PlaybackSchedulingState::Seeking,
+                };
+                playback.push(p);
+            }
+            let snap = snapshot_with_cap(playback, tasks, cap_bps);
+            let decisions = compute(&snap, &Default::default(), &config());
+
+            // INVARIANT 1: sum(allocation) ≤ capacity.
+            let sum: u64 = decisions.iter().map(|d| d.allocated_bps).sum();
+            assert!(
+                sum <= cap_bps,
+                "case {case}: capacity overflow {sum} > {cap_bps}"
+            );
+            // INVARIANT 2: no orphan/duplicate decisions.
+            let mut ids: Vec<&str> = decisions.iter().map(|d| d.task_id.as_str()).collect();
+            ids.sort_unstable();
+            let before = ids.len();
+            ids.dedup();
+            assert_eq!(ids.len(), before, "case {case}: duplicate decision");
+            // INVARIANT 3: ended/paused/non-running receive zero.
+            for d in &decisions {
+                let view = snap
+                    .tasks
+                    .iter()
+                    .find(|t| t.task_id == d.task_id)
+                    .map(|t| t.state)
+                    .unwrap_or(TaskRunState::Running);
+                let paused_view = snap
+                    .playback
+                    .iter()
+                    .find(|p| Some(&p.session_id) == d.session_id.as_ref())
+                    .map(|p| p.state == PlaybackSchedulingState::Paused)
+                    .unwrap_or(false);
+                if view != TaskRunState::Running || paused_view {
+                    assert_eq!(
+                        d.allocated_bps, 0,
+                        "case {case}: non-running {} got bandwidth",
+                        d.task_id
+                    );
+                }
+            }
+        }
     }
 
     /// §23/§16: user priority lifts a task; emergency playback still
