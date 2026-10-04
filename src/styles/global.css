@@ -11,7 +11,16 @@
   --ok: #58b98c;
   --border: #2a2e36;
   --radius: 8px;
-}
+
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --transition-fast: 120ms ease;
+    --transition-normal: 200ms ease;}
 
 * {
   box-sizing: border-box;
@@ -751,4 +760,30 @@ button:focus-visible {
 .error-details summary {
   cursor: pointer;
   color: var(--text-dim, #999);
+}
+
+/* §21/§22: motion — fast/quiet/precise; reduced-motion turns
+   non-essential transitions off. Motion never carries information
+   alone (§22). */
+.view {
+  animation: view-fade var(--transition-normal);
+}
+
+@keyframes view-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

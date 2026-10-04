@@ -296,6 +296,7 @@ function LibraryRow({
   onDelete: () => void;
 }) {
   const playable = item.availability === "available";
+  const missing = item.availability === "missing";
   return (
     <tr className={`library-row availability-${item.availability}`} data-testid="library-row">
       <td className="library-name" title={item.relativePath}>
@@ -304,7 +305,16 @@ function LibraryRow({
       <td>{item.category}</td>
       <td>{formatBytes(item.sizeBytes)}</td>
       <td>
-        <span className={`library-state state-${item.availability}`}>{item.availability}</span>
+        {/* §38: state text, never color-only; missing explains and offers
+            actions rather than a bare "broken". */}
+        <span className={`library-state state-${item.availability}`}>
+          {missing ? "File unavailable" : item.availability}
+        </span>
+        {missing && (
+          <button type="button" className="btn btn-small" onClick={onRefresh} title="Check the file again">
+            Recheck
+          </button>
+        )}
       </td>
       <td className="library-actions">
         <button

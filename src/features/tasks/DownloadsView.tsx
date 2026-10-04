@@ -126,6 +126,8 @@ export function DownloadsView({
       setError("Enter an HTTP/HTTPS URL.");
       return;
     }
+    // §87: double-click / double-submit guard.
+    if (starting) return;
     setStarting(true);
     try {
       const { downloadId } = await api.startDownload({
