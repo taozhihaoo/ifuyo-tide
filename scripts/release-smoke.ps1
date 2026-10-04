@@ -21,6 +21,10 @@ param(
     [string]$ExePath = "src-tauri\target\release\ifuyo-tide.exe",
     [string]$ExpectedVersion = "0.2.0-rc.1",
     [int]$IdleSampleSeconds = 8,
+    # Reusing a fixed -DataRoot across runs (e.g. around an installer
+    # upgrade) turns the seeded-row check into a data-preservation
+    # check across the upgrade.
+    [string]$DataRoot = "",
     [switch]$Clean
 )
 
@@ -41,9 +45,14 @@ $vi = (Get-Item $exe).VersionInfo
 Check "version-resource" ($vi.ProductVersion -eq $ExpectedVersion) ("ProductVersion=" + $vi.ProductVersion)
 
 # --- 2. isolated app data ---------------------------------------------------
-$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$dataRoot = Join-Path ([System.IO.Path]::GetTempPath()) "tide-rc-smoke\$stamp"
-New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
+if ($DataRoot) {
+    $dataRoot = $DataRoot
+    New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
+} else {
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $dataRoot = Join-Path ([System.IO.Path]::GetTempPath()) "tide-rc-smoke\$stamp"
+    New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
+}
 $realLocalAppData = $env:LOCALAPPDATA
 $env:LOCALAPPDATA = $dataRoot
 Write-Output "INFO isolated-LOCALAPPDATA $dataRoot"
@@ -52,6 +61,18 @@ function Read-Log([string]$dataRoot) {
     $log = Join-Path $dataRoot "ifuyo\Tide\logs\tide.log"
     if (-not (Test-Path $log)) { return @() }
     Get-Content $log -ErrorAction SilentlyContinue
+}
+
+# Run-scoped view: when a fixed -DataRoot is reused across runs (upgrade
+# testing), event assertions must only consider lines this run produced.
+$script:logBase = 0
+function Reset-LogScope([string]$dataRoot) {
+    $script:logBase = @(Read-Log $dataRoot).Count
+}
+function Read-NewLog([string]$dataRoot) {
+    $all = @(Read-Log $dataRoot)
+    if ($all.Count -gt $script:logBase) { return $all[$script:logBase..($all.Count - 1)] }
+    return @()
 }
 
 function Wait-For([scriptblock]$cond, [int]$seconds, [string]$what) {
@@ -79,17 +100,18 @@ function Stop-Tide([System.Diagnostics.Process]$p) {
 }
 
 # --- 3-5. cold launch: dirs, migrations, log health --------------------------
+Reset-LogScope $dataRoot
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $p = Start-Tide
 $db = Join-Path $dataRoot "ifuyo\Tide\database\tide.db"
 $dbCreated = Wait-For { Test-Path $db } 60 "database file"
 Check "required-dirs" ($dbCreated -and (Test-Path (Join-Path $dataRoot "ifuyo\Tide\torrent-metadata"))) "database/logs/torrent-metadata under isolated LOCALAPPDATA"
 
-$started = Wait-For { (Read-Log $dataRoot | Select-String -SimpleMatch '"app.started"').Count -gt 0 } 60 "app.started"
+$started = Wait-For { @(Read-NewLog $dataRoot | Select-String -SimpleMatch '"app.started"').Count -gt 0 } 60 "app.started"
 $coldStartMs = $sw.ElapsedMilliseconds
 Check "launch-app-started" $started ("cold start to app.started = ${coldStartMs}ms")
 
-$logLines = @(Read-Log $dataRoot)
+$logLines = @(Read-NewLog $dataRoot)
 $migrations = @($logLines | Select-String -SimpleMatch '"db.migration_applied"')
 Check "migrations-4" ($migrations.Count -eq 4) ("db.migration_applied events = " + $migrations.Count)
 $panics = @($logLines | Select-String -Pattern 'panic|FATAL')
@@ -143,7 +165,7 @@ Stop-Tide $p
 
 # --- 8. warm relaunch: recovery + row persistence ----------------------------
 $p2 = Start-Tide
-$relaunched = Wait-For { (Read-Log $dataRoot | Select-String -SimpleMatch '"app.started"').Count -ge 2 } 60 "second app.started"
+$relaunched = Wait-For { @(Read-NewLog $dataRoot | Select-String -SimpleMatch '"app.started"').Count -ge 2 } 60 "second app.started"
 Check "warm-relaunch" $relaunched "second launch reaches app.started"
 $row = (python $uvFile $db 2>$null)
 $countPy = @'
