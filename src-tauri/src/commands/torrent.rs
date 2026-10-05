@@ -40,6 +40,10 @@ pub struct TorrentDto {
     pub uploaded_bytes: u64,
     pub selected_count: Option<u32>,
     pub files: Vec<TorrentFileDto>,
+    /// Live engine speed (bytes/sec); None = no live stats yet. Read
+    /// at query time — never persisted, never faked (§39).
+    #[serde(default)]
+    pub download_speed_bps: Option<u64>,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
 }
@@ -54,7 +58,11 @@ pub struct TorrentInspectionDto {
     pub files: Vec<TorrentFileDto>,
 }
 
-fn torrent_dto(record: &TorrentTaskRecord, repo: &TorrentRepository) -> TorrentDto {
+fn torrent_dto(
+    record: &TorrentTaskRecord,
+    repo: &TorrentRepository,
+    download_speed_bps: Option<u64>,
+) -> TorrentDto {
     let files = repo
         .list_files(&record.id)
         .unwrap_or_default()
@@ -78,6 +86,7 @@ fn torrent_dto(record: &TorrentTaskRecord, repo: &TorrentRepository) -> TorrentD
         uploaded_bytes: record.uploaded_bytes,
         selected_count: record.selected_count,
         files,
+        download_speed_bps,
         error_code: record.error_code.clone(),
         error_message: record.error_message.clone(),
     }
@@ -253,9 +262,12 @@ pub async fn create_torrent_task(
         "torrent_file" => {
             let meta_path = record.metadata_path.clone().expect("metadata copy");
             let bytes = std::fs::read(&meta_path)?;
+            // M3 §23: metadata (and the file list) is known up front —
+            // add PAUSED so nothing downloads until the user picks the
+            // files and resumes.
             state
                 .torrent_engine
-                .add_torrent_bytes(bytes, &record.storage_root, None, None, false)
+                .add_torrent_bytes(bytes, &record.storage_root, None, None, true)
                 .await?
         }
         _ => unreachable!(),
@@ -304,7 +316,17 @@ pub struct DownloadStartedLike {
 pub async fn list_torrents(state: State<'_, AppState>) -> Result<Vec<TorrentDto>, TideError> {
     let repo = state.torrent_repository.clone();
     let records = repo.list_tasks()?;
-    Ok(records.iter().map(|r| torrent_dto(r, &repo)).collect())
+    Ok(records
+        .iter()
+        .map(|r| {
+            let speed = r
+                .info_hash
+                .as_deref()
+                .and_then(|h| state.torrent_engine.handle_for(h))
+                .and_then(|h| state.torrent_engine.live_download_speed_bps(&h));
+            torrent_dto(r, &repo, speed)
+        })
+        .collect())
 }
 
 #[tauri::command]

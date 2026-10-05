@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
+import { formatEta, formatSpeed } from "../../lib/format";
 import * as torrentApi from "./torrentApi";
 import type { TorrentDto } from "./torrentApi";
 
@@ -133,6 +134,20 @@ function TorrentCard({
 }) {
   const [showFiles, setShowFiles] = useState(false);
 
+  // Live speed + honest ETA (M9 §12 rules: only with reliable data).
+  const speed = t.downloadSpeedBps ?? 0;
+  const etaSecs =
+    t.state === "running" && speed > 0 && t.totalBytes != null
+      ? Math.max(0, (t.totalBytes - t.downloadedBytes) / speed)
+      : null;
+
+  const setSelection = (index: number) => {
+    const selected = t.files
+      .filter((x) => (x.index === index ? !x.selected : x.selected))
+      .map((x) => x.index);
+    void torrentApi.setTorrentFileSelection(t.id, selected).then(onChanged);
+  };
+
   // §39/§66: the badge reflects the REAL state in user language — a
   // magnet that has not resolved its metadata yet is not "downloading",
   // and internal enum values never leak into the UI copy.
@@ -156,6 +171,8 @@ function TorrentCard({
             {formatBytes(t.downloadedBytes)}
             {t.totalBytes != null ? ` / ${formatBytes(t.totalBytes)}` : ""}
           </span>
+          {t.state === "running" && speed > 0 && <span>{formatSpeed(speed)}</span>}
+          {etaSecs != null && <span>ETA {formatEta(etaSecs)}</span>}
           {t.selectedCount != null && <span>{t.selectedCount} files selected</span>}
         </div>
       </div>
@@ -212,6 +229,13 @@ function TorrentCard({
         <ul className="torrent-files">
           {t.files.map((f) => (
             <li key={f.index} className={f.selected ? "" : "dim"}>
+              <input
+                type="checkbox"
+                aria-label={`Download ${f.path}`}
+                checked={f.selected}
+                disabled={t.state === "completed"}
+                onChange={() => setSelection(f.index)}
+              />
               <span className="file-index">#{f.index}</span> {f.path}{" "}
               <span className="dim">({formatBytes(f.size)})</span>
               {onPlay && t.infoHash && (

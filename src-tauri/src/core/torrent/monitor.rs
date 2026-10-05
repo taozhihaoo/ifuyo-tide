@@ -53,6 +53,11 @@ pub async fn tick(
         };
         let resolved = engine.metadata_resolved(&handle);
 
+        // Whether the user ever made an explicit file selection
+        // (selected_count is Some only after creation-with-metadata or
+        // a set_torrent_file_selection call).
+        let user_selected = record.selected_count.is_some();
+
         // Magnet backfill: once the DHT delivers the metadata, persist
         // the real name/total/file list (previously never done).
         if resolved && record.total_bytes.is_none() {
@@ -83,6 +88,32 @@ pub async fn tick(
                     record.total_bytes = Some(metadata.total_size);
                     record.selected_count = Some(metadata.files.len() as u32);
                     record.phase = "downloading".into();
+                    if !user_selected {
+                        // M3 §23: the user never chose what to download —
+                        // hold the torrent instead of grabbing every file
+                        // by default. They pick files in the UI, then
+                        // resume.
+                        engine.pause(&handle).await?;
+                        repo.update_task(
+                            &record.id,
+                            "paused",
+                            "downloading",
+                            Some(&info_hash),
+                            record.total_bytes,
+                            record.downloaded_bytes,
+                            record.uploaded_bytes,
+                            record.selected_count,
+                            None,
+                            None,
+                            None,
+                        )?;
+                        record.state = "paused".into();
+                        crate::diagnostics::info(
+                            "torrent_monitor.paused_for_selection",
+                            &[("task_id", record.id.as_str())],
+                        );
+                        continue;
+                    }
                 }
                 Err(err) => {
                     crate::diagnostics::warn(

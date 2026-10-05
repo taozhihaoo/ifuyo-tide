@@ -21,6 +21,7 @@ export interface TorrentDto {
   uploadedBytes: number;
   selectedCount: number | null;
   files: TorrentFileDto[];
+  downloadSpeedBps: number | null;
   errorCode: string | null;
   errorMessage: string | null;
 }

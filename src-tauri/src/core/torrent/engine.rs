@@ -363,6 +363,12 @@ impl TorrentEngine {
     }
 
     /// M7(上) §41: the session's live download throughput (bytes/sec).
+    /// Live per-torrent download speed (bytes/sec); None while the
+    /// torrent has no live stats yet (paused / initializing).
+    pub fn live_download_speed_bps(&self, handle: &Arc<ManagedTorrent>) -> Option<u64> {
+        handle.stats().live.map(|l| l.download_speed.as_bytes())
+    }
+
     pub fn live_download_bps(&self) -> u64 {
         let total = std::cell::Cell::new(0u64);
         self.session.with_torrents(|torrents| {

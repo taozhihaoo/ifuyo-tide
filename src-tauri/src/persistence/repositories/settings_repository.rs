@@ -35,9 +35,18 @@ impl SettingsRepository {
         conn: &Connection,
         prefix: &str,
     ) -> Result<Vec<(String, String)>, TideError> {
-        let mut stmt = conn
-            .prepare("SELECT key, value FROM settings WHERE key LIKE ?1 ESCAPE '\' ORDER BY key")?;
-        let rows = stmt.query_map([format!("{prefix}%")], |row| {
+        // Escape LIKE wildcards in the prefix itself and declare a
+        // single-character ESCAPE. (`ESCAPE '\'` in a Rust literal is
+        // `ESCAPE ''` on the wire — `\'` escapes the quote — which
+        // SQLite rejects and silently disabled preference loading.)
+        let escaped = prefix
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let mut stmt = conn.prepare(
+            "SELECT key, value FROM settings WHERE key LIKE ?1 ESCAPE '\\' ORDER BY key",
+        )?;
+        let rows = stmt.query_map([format!("{escaped}%")], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
         let mut out = Vec::new();
@@ -90,5 +99,27 @@ mod tests {
         let conn = open_in_memory().unwrap();
         let repo = SettingsRepository;
         assert_eq!(repo.get(&conn, "no_such_key").unwrap(), None);
+    }
+
+    /// 1.0.2 regression: get_by_prefix used to ship `ESCAPE ''` (the
+    /// Rust literal `ESCAPE '''` escapes the quote), so the statement
+    /// failed to prepare and scheduler preferences NEVER loaded after
+    /// a restart. Prefixes containing LIKE wildcards must also survive.
+    #[test]
+    fn get_by_prefix_loads_and_escapes_wildcards() {
+        let conn = open_in_memory().unwrap();
+        let repo = SettingsRepository;
+        repo.set(&conn, "sched:task-a", "high").unwrap();
+        repo.set(&conn, "sched:task-b", "normal").unwrap();
+        repo.set(&conn, "other:key", "x").unwrap();
+
+        let rows = repo.get_by_prefix(&conn, "sched:").unwrap();
+        assert_eq!(rows.len(), 2);
+
+        // A prefix containing wildcards must match literally, not expand.
+        repo.set(&conn, "weird%key", "v").unwrap();
+        let rows = repo.get_by_prefix(&conn, "weird%").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "weird%key");
     }
 }
