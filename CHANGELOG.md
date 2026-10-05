@@ -3,6 +3,36 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.1 — 2026-10-05
+
+Patch release from real-use validation of the installed 1.0.0.
+
+### Fixed
+
+- **Torrent pause did not persist**: the pause command wrote
+  `phase='paused'`, which the database schema rejects (phase is an
+  engine phase, pause is a task state) — every pause failed its
+  write and a restart resumed the task. Pause now keeps the row's
+  engine phase and flips only the state.
+- **Magnet tasks froze at their creation-time shape**: when the DHT
+  delivered the metadata, the real display name, total size and
+  file list were never written back — the UI showed the raw info
+  hash, 0 B and "Files (0)" forever. The completion monitor now
+  backfills metadata (and file rows) when it resolves.
+- The completion monitor no longer resurrects paused tasks back to
+  running, writes the honest `metadata_pending` phase while metadata
+  is unresolved, and no longer clobbers freshly backfilled values
+  with a stale row snapshot.
+- UI: the torrent badge shows "Resolving metadata…" instead of the
+  internal enum; a Ready task shows only Resume (Pause requires a
+  running task).
+
+### Added
+
+- CI: a GitHub Actions workflow running `cargo fmt --check`,
+  `cargo test --locked` and the frontend typecheck/tests on
+  windows-latest for every push/PR.
+
 ## 1.0.0 — 2026-10-05
 
 First stable release. The M0–M11 feature set is frozen: M12 added no
