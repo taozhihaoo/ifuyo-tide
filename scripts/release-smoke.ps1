@@ -19,7 +19,7 @@
 
 param(
     [string]$ExePath = "src-tauri\target\release\ifuyo-tide.exe",
-    [string]$ExpectedVersion = "1.0.2",
+    [string]$ExpectedVersion = "1.0.3",
     [int]$IdleSampleSeconds = 8,
     # Reusing a fixed -DataRoot across runs (e.g. around an installer
     # upgrade) turns the seeded-row check into a data-preservation
@@ -43,6 +43,18 @@ if (-not (Test-Path $ExePath)) { throw "exe not found: $ExePath" }
 $exe = (Resolve-Path $ExePath).Path
 $vi = (Get-Item $exe).VersionInfo
 Check "version-resource" ($vi.ProductVersion -eq $ExpectedVersion) ("ProductVersion=" + $vi.ProductVersion)
+
+# PE subsystem must be 2 (WINDOWS_GUI) in release: a console-subsystem
+# build pops a log window over the app on double-click (1.0.2 defect).
+$fs = [System.IO.File]::OpenRead($exe)
+$br = New-Object System.IO.BinaryReader($fs)
+$fs.Seek(0x3C, 'Begin') | Out-Null
+$peOff = $br.ReadInt32()
+$subsysOff = $peOff + 4 + 20 + 68  # PE sig + COFF + optional header magic-independent offset for PE32+
+$fs.Seek($subsysOff, 'Begin') | Out-Null
+$subsystem = $br.ReadUInt16()
+$fs.Close()
+Check "gui-subsystem" ($subsystem -eq 2) ("PE subsystem=$subsystem (2=GUI, 3=console)")
 
 # --- 2. isolated app data ---------------------------------------------------
 if ($DataRoot) {

@@ -3,6 +3,20 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.3 — 2026-10-06
+
+Patch release: fixes the most user-visible launch defect.
+
+### Fixed
+
+- **Double-clicking the exe opened a console window with log output
+  instead of (in front of) the app**: release builds were compiled as
+  a console-subsystem program — `main.rs` was missing the
+  `windows_subsystem = "windows"` attribute. Release builds are now
+  GUI-subsystem (no console window; the app window opens directly).
+  Debug builds keep the console. A PE-subsystem check was added to
+  the release smoke harness so this cannot regress silently.
+
 ## 1.0.2 — 2026-10-05
 
 Second patch release from real-use validation.

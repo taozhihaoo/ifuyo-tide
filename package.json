@@ -1,7 +1,7 @@
 {
   "name": "ifuyo-tide",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "ifuyo Tide — local-first downloader and progressive media player",
   "type": "module",
   "scripts": {
