@@ -3,6 +3,30 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.2 — 2026-10-05
+
+Second patch release from real-use validation.
+
+### Added
+
+- Torrents view now shows **live download speed and ETA** while a
+  task is running (real engine stats; "—" when idle, per the honest-
+  data rules).
+- **File selection**: torrents no longer grab every file by default.
+  A .torrent task is added paused (pick files, then Resume); a magnet
+  auto-pauses the moment its metadata resolves without a user
+  selection; the file list has per-file checkboxes driving the
+  existing selection IPC.
+
+### Fixed
+
+- Scheduler preferences (global bandwidth limit, per-task
+  priorities) never loaded after a restart: the settings prefix
+  query shipped an empty `ESCAPE` expression (a Rust string-escape
+  mistake, visible as `SQLITE_ERR: ... ESCAPE expression must be a
+  single character` at startup). Fixed and covered by a regression
+  test, including wildcard-containing prefixes.
+
 ## 1.0.1 — 2026-10-05
 
 Patch release from real-use validation of the installed 1.0.0.
