@@ -133,13 +133,19 @@ function TorrentCard({
 }) {
   const [showFiles, setShowFiles] = useState(false);
 
+  // §39/§66: the badge reflects the REAL state in user language — a
+  // magnet that has not resolved its metadata yet is not "downloading",
+  // and internal enum values never leak into the UI copy.
+  const stateLabel =
+    t.phase === "metadata_pending" ? "Resolving metadata…" : t.state;
+
   return (
     <li className="task-card" data-testid="torrent-card">
       <div className="task-main">
         <span className="task-name" title={t.displayName}>
           {t.displayName}
         </span>
-        <span className={`task-state state-${t.state}`}>{t.state}</span>
+        <span className={`task-state state-${t.state}`}>{stateLabel}</span>
       </div>
       <div className="download-progress">
         {t.totalBytes != null && (
@@ -151,7 +157,6 @@ function TorrentCard({
             {t.totalBytes != null ? ` / ${formatBytes(t.totalBytes)}` : ""}
           </span>
           {t.selectedCount != null && <span>{t.selectedCount} files selected</span>}
-          {t.phase !== "downloading" && <span>{t.phase}</span>}
         </div>
       </div>
       {t.errorMessage && (
@@ -160,7 +165,7 @@ function TorrentCard({
         </div>
       )}
       <div className="task-actions">
-        {(t.state === "running" || t.state === "ready") && (
+        {t.state === "running" && (
           <button
             type="button"
             className="btn btn-small"
