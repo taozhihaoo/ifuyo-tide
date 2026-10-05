@@ -41,7 +41,7 @@ pub async fn tick(
     repo: &Arc<TorrentRepository>,
     library: &Arc<LibraryService>,
 ) -> Result<(), crate::error::TideError> {
-    for record in repo.list_tasks()? {
+    for mut record in repo.list_tasks()? {
         let Some(info_hash) = record.info_hash.clone() else {
             continue; // metadata still pending
         };
@@ -76,6 +76,13 @@ pub async fn tick(
                         })
                         .collect();
                     repo.replace_files(&record.id, &info_hash, &rows)?;
+                    // Refresh the loop-local snapshot: the progress write
+                    // below uses these fields and would otherwise clobber
+                    // the just-persisted values with stale ones.
+                    record.display_name = metadata.name;
+                    record.total_bytes = Some(metadata.total_size);
+                    record.selected_count = Some(metadata.files.len() as u32);
+                    record.phase = "downloading".into();
                 }
                 Err(err) => {
                     crate::diagnostics::warn(

@@ -478,4 +478,90 @@ mod tests {
         assert!(repo.get_task("t1").unwrap().is_none());
         assert!(repo.list_files("t1").unwrap().is_empty());
     }
+
+    /// M12(1.0.1) regression: pause is a TASK STATE — the schema CHECK
+    /// rejects phase='paused', and the pause write must keep the row's
+    /// engine phase so the pause actually persists.
+    #[test]
+    fn pause_writes_preserved_phase_not_phase_paused() {
+        let repo = TorrentRepository::open_in_memory().unwrap();
+        repo.insert_task(&sample("t1", "running", "downloading"))
+            .unwrap();
+        // The exact write pause_torrent used to make — CHECK-rejected.
+        assert!(repo
+            .update_task(
+                "t1",
+                "paused",
+                "paused",
+                Some(&"a".repeat(40)),
+                Some(4096),
+                0,
+                0,
+                None,
+                None,
+                None,
+                None,
+            )
+            .is_err());
+        // The fixed write: state flips, the engine phase is preserved.
+        repo.update_task(
+            "t1",
+            "paused",
+            "downloading",
+            Some(&"a".repeat(40)),
+            Some(4096),
+            0,
+            0,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let loaded = repo.get_task("t1").unwrap().unwrap();
+        assert_eq!(loaded.state, "paused");
+        assert_eq!(loaded.phase, "downloading");
+    }
+
+    /// M12(1.0.1): magnet metadata resolution backfill — display name,
+    /// total size, selection count and file rows land in the DB, and
+    /// the phase advances metadata_pending → downloading.
+    #[test]
+    fn magnet_metadata_resolution_backfills_row_and_files() {
+        let repo = TorrentRepository::open_in_memory().unwrap();
+        let mut r = sample("m1", "ready", "metadata_pending");
+        r.total_bytes = None; // magnet-shaped: nothing known yet
+        repo.insert_task(&r).unwrap();
+
+        repo.set_magnet_metadata_resolved("m1", "Some Release", 8192, 2)
+            .unwrap();
+        repo.replace_files(
+            "m1",
+            &"a".repeat(40),
+            &[
+                TorrentFileRecord {
+                    file_index: 0,
+                    info_hash: "a".repeat(40),
+                    relative_path: "a.mkv".into(),
+                    size: 8000,
+                    selected: true,
+                },
+                TorrentFileRecord {
+                    file_index: 1,
+                    info_hash: "a".repeat(40),
+                    relative_path: "b.txt".into(),
+                    size: 192,
+                    selected: true,
+                },
+            ],
+        )
+        .unwrap();
+
+        let loaded = repo.get_task("m1").unwrap().unwrap();
+        assert_eq!(loaded.display_name, "Some Release");
+        assert_eq!(loaded.total_bytes, Some(8192));
+        assert_eq!(loaded.selected_count, Some(2));
+        assert_eq!(loaded.phase, "downloading");
+        assert_eq!(repo.list_files("m1").unwrap().len(), 2);
+    }
 }

@@ -8,8 +8,13 @@
 mod common;
 
 use common::pattern_byte;
+use ifuyo_tide_lib::core::library::{LibraryRepository, LibraryService};
+use ifuyo_tide_lib::core::torrent::monitor;
 use ifuyo_tide_lib::core::torrent::source::validate_torrent_paths;
 use ifuyo_tide_lib::core::torrent::{TorrentEngine, TorrentEngineConfig};
+use ifuyo_tide_lib::persistence::repositories::{
+    TorrentFileRecord, TorrentRepository, TorrentTaskRecord,
+};
 use librqbit::{CreateTorrentOptions, ListenerMode, ListenerOptions};
 use librqbit::{Session, SessionOptions};
 use std::io::Write;
@@ -424,5 +429,109 @@ async fn zero_byte_file_in_multi_file_torrent() {
     assert!(work.join("zero.bin").exists());
     engine.shutdown().await;
     let _ = std::fs::remove_dir_all(temp_dir("seed-zero"));
+    let _ = std::fs::remove_dir_all(work);
+}
+
+/// M12(1.0.1) regression: the completion monitor must (a) backfill a
+/// magnet-shaped row once metadata resolves — real display name, total
+/// size, selected count and file rows — and (b) never resurrect a
+/// paused task (pause used to be stomped back to running, and used to
+/// fail its DB write outright via phase='paused').
+#[tokio::test]
+async fn monitor_backfills_magnet_metadata_and_preserves_pause() {
+    let seeder = spawn_seeder("monitor", &[("video.mkv", 256 * 1024), ("notes.txt", 10)]).await;
+    let engine = test_engine(temp_dir("monitor-meta"), Some(vec![seeder.listen_addr])).await;
+    let work = temp_dir("monitor-work");
+    let repo = std::sync::Arc::new(TorrentRepository::open_in_memory().unwrap());
+    let library = std::sync::Arc::new(LibraryService::new(std::sync::Arc::new(
+        LibraryRepository::open_in_memory().unwrap(),
+    )));
+
+    // Add to the engine PAUSED (deterministic: no download noise) and
+    // insert a magnet-shaped row: nothing known except the info hash.
+    let added = engine
+        .add_torrent_bytes(
+            seeder.torrent_bytes.clone(),
+            &work,
+            None,
+            Some(vec![seeder.listen_addr]),
+            true,
+        )
+        .await
+        .expect("add");
+    let handle = added.handle.clone();
+    let record = TorrentTaskRecord {
+        id: "monitor-t1".into(),
+        info_hash: Some(added.info_hash.clone()),
+        source_kind: "magnet".into(),
+        magnet_uri: None,
+        metadata_path: None,
+        metadata_sha256: None,
+        display_name: added.info_hash.clone(),
+        storage_root: work.clone(),
+        state: "ready".into(),
+        phase: "metadata_pending".into(),
+        total_bytes: None,
+        downloaded_bytes: 0,
+        uploaded_bytes: 0,
+        selected_count: None,
+        error_code: None,
+        error_message: None,
+        recovery_reason: None,
+        created_at: 0,
+        updated_at: 0,
+        completed_at: None,
+    };
+    repo.insert_task(&record).unwrap();
+
+    // A paused torrent does not initialize, so its metadata never
+    // becomes "resolved" — production magnets are added LIVE
+    // (paused=false) and resolve from the DHT/bytes source. Resume to
+    // initialize, wait for resolution, then tick while downloading.
+    engine.resume(&handle).await.unwrap();
+    for _ in 0..50 {
+        if engine.metadata_resolved(&handle) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(engine.metadata_resolved(&handle));
+    // Tick 1: metadata is resolved — the row must gain the real
+    // metadata and file rows, phase advances to downloading.
+    monitor::tick(&engine, &repo, &library).await.unwrap();
+    let row = repo.get_task("monitor-t1").unwrap().unwrap();
+    assert_eq!(row.total_bytes, Some(256 * 1024 + 10));
+    assert_eq!(row.selected_count, Some(2));
+    assert_eq!(row.phase, "downloading");
+    assert_ne!(row.display_name, added.info_hash);
+    assert!(!row.display_name.is_empty());
+    let files = repo.list_files("monitor-t1").unwrap();
+    assert_eq!(files.len(), 2);
+    assert!(files.iter().all(|f| f.selected));
+
+    // Pause (the FIXED write shape: state flips, phase preserved).
+    repo.update_task(
+        "monitor-t1",
+        "paused",
+        "downloading",
+        Some(&added.info_hash),
+        row.total_bytes,
+        0,
+        0,
+        Some(2),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    // Tick 2 must keep the paused state (no stomp to running).
+    monitor::tick(&engine, &repo, &library).await.unwrap();
+    let after = repo.get_task("monitor-t1").unwrap().unwrap();
+    assert_eq!(after.state, "paused");
+    assert_eq!(after.phase, "downloading");
+
+    engine.shutdown().await;
+    let _ = std::fs::remove_dir_all(temp_dir("seed-monitor"));
     let _ = std::fs::remove_dir_all(work);
 }
