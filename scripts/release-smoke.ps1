@@ -25,7 +25,10 @@ param(
     # upgrade) turns the seeded-row check into a data-preservation
     # check across the upgrade.
     [string]$DataRoot = "",
-    [switch]$Clean
+    [switch]$Clean,
+    # Legacy releases (< 1.0.3) are console-subsystem; the matrix passes
+    # this when smoke-testing the PREVIOUS installer as an upgrade source.
+    [switch]$AllowConsoleSubsystem
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,7 +57,11 @@ $subsysOff = $peOff + 4 + 20 + 68  # PE sig + COFF + optional header magic-indep
 $fs.Seek($subsysOff, 'Begin') | Out-Null
 $subsystem = $br.ReadUInt16()
 $fs.Close()
-Check "gui-subsystem" ($subsystem -eq 2) ("PE subsystem=$subsystem (2=GUI, 3=console)")
+if ($AllowConsoleSubsystem) {
+    Write-Output "SKIP gui-subsystem (legacy release expected console-subsystem)"
+} else {
+    Check "gui-subsystem" ($subsystem -eq 2) ("PE subsystem=$subsystem (2=GUI, 3=console)")
+}
 
 # --- 2. isolated app data ---------------------------------------------------
 if ($DataRoot) {
