@@ -4,13 +4,22 @@
 //! detection for torrents — the DB state stayed ready/downloading
 //! forever and recovery could not classify finished torrents. This
 //! monitor closes that gap: every few seconds it reconciles task rows
-//! against live engine stats, marks finished tasks completed, and
-//! imports their selected files into the library (mode A, §27 — one
-//! item per file).
+//! against live engine stats, backfills magnet metadata once the DHT
+//! delivers it, marks finished tasks completed, and imports their
+//! selected files into the library (mode A, §27 — one item per file).
+//!
+//! M12(1.0.1) fixes found in real-use validation:
+//! - a paused task keeps its paused STATE (progress writes used to
+//!   stomp it back to running);
+//! - the phase written is honest: metadata_pending until the metadata
+//!   is actually resolved;
+//! - magnet metadata (display name, total size, file list) is now
+//!   persisted when it resolves — previously a magnet row froze at
+//!   its creation-time shape forever (Files(0), info-hash title).
 
 use crate::core::library::LibraryService;
 use crate::core::torrent::TorrentEngine;
-use crate::persistence::repositories::TorrentRepository;
+use crate::persistence::repositories::{TorrentFileRecord, TorrentRepository};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,7 +34,9 @@ pub fn spawn(engine: TorrentEngine, repo: Arc<TorrentRepository>, library: Arc<L
     });
 }
 
-async fn tick(
+/// One reconciliation pass. Public so integration tests can drive a
+/// single deterministic tick instead of racing the 5-second loop.
+pub async fn tick(
     engine: &TorrentEngine,
     repo: &Arc<TorrentRepository>,
     library: &Arc<LibraryService>,
@@ -40,14 +51,65 @@ async fn tick(
         let Some(handle) = engine.handle_for(&info_hash) else {
             continue; // not in the engine (paused-but-recovered etc.)
         };
+        let resolved = engine.metadata_resolved(&handle);
+
+        // Magnet backfill: once the DHT delivers the metadata, persist
+        // the real name/total/file list (previously never done).
+        if resolved && record.total_bytes.is_none() {
+            match engine.metadata_of(&handle) {
+                Ok(metadata) => {
+                    repo.set_magnet_metadata_resolved(
+                        &record.id,
+                        &metadata.name,
+                        metadata.total_size,
+                        metadata.files.len() as u32,
+                    )?;
+                    let rows: Vec<TorrentFileRecord> = metadata
+                        .files
+                        .iter()
+                        .map(|f| TorrentFileRecord {
+                            file_index: f.index as u32,
+                            info_hash: info_hash.clone(),
+                            relative_path: f.relative_path.clone(),
+                            size: f.size,
+                            selected: true,
+                        })
+                        .collect();
+                    repo.replace_files(&record.id, &info_hash, &rows)?;
+                }
+                Err(err) => {
+                    crate::diagnostics::warn(
+                        "torrent_monitor.metadata_backfill_failed",
+                        &[("code", err.code())],
+                    );
+                    continue;
+                }
+            }
+        }
+
         let stats = engine.stats(&handle);
         if !stats.finished {
-            // Keep the row's progress roughly current for the UI.
-            if stats.progress_bytes != record.downloaded_bytes {
+            // Keep the row's progress roughly current for the UI — but
+            // never resurrect a paused task: pause is a user decision
+            // and must survive monitor ticks (and restarts).
+            let state = if record.state == "paused" {
+                "paused"
+            } else {
+                "running"
+            };
+            let phase = if resolved {
+                "downloading"
+            } else {
+                "metadata_pending"
+            };
+            if stats.progress_bytes != record.downloaded_bytes
+                || state != record.state
+                || phase != record.phase
+            {
                 repo.update_task(
                     &record.id,
-                    "running",
-                    "downloading",
+                    state,
+                    phase,
                     Some(&info_hash),
                     record.total_bytes,
                     stats.progress_bytes,
@@ -78,7 +140,6 @@ async fn tick(
         )?;
         crate::diagnostics::info("torrent_monitor.completed", &[]);
 
-        let total_bytes = record.total_bytes;
         for file in repo.list_files(&record.id)? {
             if !file.selected {
                 continue;
@@ -90,7 +151,6 @@ async fn tick(
                 let _ = item;
             }
         }
-        let _ = total_bytes;
     }
     Ok(())
 }

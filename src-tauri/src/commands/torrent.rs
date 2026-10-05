@@ -151,7 +151,10 @@ pub async fn create_torrent_task(
                     display_name: name.unwrap_or_else(|| info_hash.clone()),
                     storage_root: destination,
                     state: "ready".into(),
-                    phase: "downloading".into(),
+                    // Honest phase (§39): until the DHT delivers the
+                    // metadata there is nothing to download yet — the
+                    // monitor advances this to downloading on resolution.
+                    phase: "metadata_pending".into(),
                     total_bytes: None,
                     downloaded_bytes: 0,
                     uploaded_bytes: 0,
@@ -348,11 +351,16 @@ pub async fn pause_torrent(state: State<'_, AppState>, id: String) -> Result<(),
     if let Some(handle) = engine.handle_for(&hash) {
         engine.pause(&handle).await?;
     }
+    // Pause is a TASK STATE, not an engine phase: the schema CHECK only
+    // allows metadata_pending/metadata_failed/downloading/checking/
+    // seeding/completed/error for phase, so keep the row's phase and
+    // flip state only (writing phase='paused' fails the CHECK and the
+    // whole update is rejected — the pause then never persists).
     repo_update(
         &state.torrent_repository,
         &id,
         "paused",
-        "paused",
+        &record.phase,
         &record,
         None,
     );

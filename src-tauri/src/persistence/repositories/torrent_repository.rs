@@ -213,6 +213,28 @@ impl TorrentRepository {
         Ok(())
     }
 
+    /// Persists magnet metadata resolution (M3 §7): real display name,
+    /// total size and selection count once the DHT delivers the
+    /// metadata. Phase advances metadata_pending → downloading; a
+    /// paused task keeps its paused STATE (the phase still advances —
+    /// the engine knows the metadata either way).
+    pub fn set_magnet_metadata_resolved(
+        &self,
+        id: &str,
+        display_name: &str,
+        total_bytes: u64,
+        selected_count: u32,
+    ) -> Result<(), TideError> {
+        self.conn().execute(
+            "UPDATE torrent_tasks
+             SET display_name = ?2, total_bytes = ?3, selected_count = ?4,
+                 phase = 'downloading', updated_at = ?5
+             WHERE id = ?1",
+            params![id, display_name, total_bytes, selected_count, now_ms()],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_task(&self, id: &str) -> Result<(), TideError> {
         self.conn()
             .execute("DELETE FROM torrent_files WHERE task_id = ?1", params![id])?;
