@@ -73,18 +73,29 @@ pub fn run() {
             Err(err) => fatal_startup("failed to open torrent repository", &err),
         };
     // M3 torrent recovery (M3 §15): re-add persisted torrent tasks to
-    // the session PAUSED; the user resumes explicitly.
-    match tauri::async_runtime::block_on(crate::core::torrent::recover_torrents(
-        &torrent_repository,
-        &torrent_engine,
-    )) {
-        Ok(outcomes) => {
-            diagnostics::info(
-                "torrent_recovery_scan",
-                &[("tasks", &outcomes.len().to_string())],
-            );
-        }
-        Err(err) => fatal_startup("torrent recovery failed", &err),
+    // the session PAUSED; the user resumes explicitly. Runs on a
+    // BACKGROUND task: a slow or hung engine re-add (librqbit can stall
+    // re-adding a torrent over stale partial data) must never delay
+    // the first window — the UI reads the DB rows, which already exist,
+    // and the completion monitor reconciles independently.
+    {
+        let torrent_engine = torrent_engine.clone();
+        let torrent_repository = torrent_repository.clone();
+        tauri::async_runtime::spawn(async move {
+            match crate::core::torrent::recover_torrents(&torrent_repository, &torrent_engine)
+                .await
+            {
+                Ok(outcomes) => {
+                    diagnostics::info(
+                        "torrent_recovery_scan",
+                        &[("tasks", &outcomes.len().to_string())],
+                    );
+                }
+                Err(err) => {
+                    diagnostics::warn("torrent_recovery_failed", &[("code", err.code())]);
+                }
+            }
+        });
     }
     // M6(上): the library service (own connection, same versioned
     // database file).
