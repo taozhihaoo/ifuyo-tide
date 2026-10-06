@@ -69,7 +69,8 @@ pub fn set_ui_locale(state: State<'_, AppState>, locale: String) -> Result<(), T
             "unsupported locale: {locale}"
         )));
     }
-    let result = state.with_conn(|conn| state.settings_repository.set(conn, KEY_UI_LOCALE, &locale));
+    let result =
+        state.with_conn(|conn| state.settings_repository.set(conn, KEY_UI_LOCALE, &locale));
     ipc_result("set_ui_locale", result)
 }
 
