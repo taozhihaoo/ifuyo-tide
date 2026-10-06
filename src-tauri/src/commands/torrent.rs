@@ -44,6 +44,10 @@ pub struct TorrentDto {
     /// at query time — never persisted, never faked (§39).
     #[serde(default)]
     pub download_speed_bps: Option<u64>,
+    /// Last recovery note (e.g. readd_timeout) — drives the "Reset
+    /// partial data" affordance in the UI.
+    #[serde(default)]
+    pub recovery_reason: Option<String>,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
 }
@@ -87,6 +91,7 @@ fn torrent_dto(
         selected_count: record.selected_count,
         files,
         download_speed_bps,
+        recovery_reason: record.recovery_reason.clone(),
         error_code: record.error_code.clone(),
         error_message: record.error_message.clone(),
     }
@@ -485,16 +490,61 @@ pub async fn delete_torrent_data(state: State<'_, AppState>, id: String) -> Resu
         .torrent_repository
         .get_task(&id)?
         .ok_or_else(|| TideError::NotFound(format!("torrent task not found: {id}")))?;
+    let mut in_engine = false;
     if let Some(hash) = &record.info_hash {
         let engine = &state.torrent_engine;
         if let Some(handle) = engine.handle_for(hash) {
             engine.remove(&handle, true).await?;
+            in_engine = true;
         }
+    }
+    if !in_engine {
+        // Not in the engine (e.g. its startup re-add timed out): the
+        // engine path above never ran, so the files would be orphaned
+        // on disk while the record — and the user's "delete data"
+        // intent — disappeared. Clean them here.
+        crate::core::torrent::recovery::reset_partial_files(&record, &state.torrent_repository)?;
     }
     state.torrent_repository.delete_task(&id)?;
     // M4(下) §102: data is gone — playback sessions must die with it.
     state.playback.close_for_owner(&id);
     Ok(())
+}
+
+/// "Reset partial data" (1.0.8): removes the task's downloaded/partial
+/// files so a fresh re-add cannot hit the stale-data hang. The task and
+/// its source (magnet URI / metadata copy) are kept — no need for the
+/// user to re-provide anything. Refuses while the engine holds the
+/// torrent (pause first); terminal tasks have nothing partial to reset.
+#[tauri::command]
+pub async fn reset_torrent_partial_data(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<u32, TideError> {
+    let record = state
+        .torrent_repository
+        .get_task(&id)?
+        .ok_or_else(|| TideError::NotFound(format!("torrent task not found: {id}")))?;
+    if matches!(record.state.as_str(), "completed" | "cancelled") {
+        return Err(TideError::InvalidInput(
+            "completed tasks have no partial data to reset".into(),
+        ));
+    }
+    if let Some(hash) = &record.info_hash {
+        if let Some(handle) = state.torrent_engine.handle_for(hash) {
+            return Err(TideError::InvalidInput(
+                "pause the torrent first (it is still held by the engine)".into(),
+            ));
+        }
+    }
+    let repo = state.torrent_repository.clone();
+    let record_for_reset = record.clone();
+    let removed = tokio::task::spawn_blocking(move || {
+        crate::core::torrent::recovery::reset_partial_files(&record_for_reset, &repo)
+    })
+    .await
+    .map_err(|err| TideError::Internal(format!("reset failed: {err}")))??;
+    Ok(removed)
 }
 
 fn repo_update(

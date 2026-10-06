@@ -166,7 +166,7 @@ function TorrentCard({
   // torrent on demand, bounded by engine timeouts) — show it, and
   // refuse re-entrant clicks instead of stacking requests.
   const [busy, setBusy] = useState(false);
-  const run = (fn: () => Promise<void>) => {
+  const run = (fn: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(true);
     setActionError(null);
@@ -254,6 +254,17 @@ function TorrentCard({
           {showFiles ? "Hide files" : `Files (${t.files.length})`}
         </button>
         {busy && <span className="dim">working…</span>}
+        {t.recoveryReason === "readd_timeout" && (
+          <button
+            type="button"
+            className="btn btn-small"
+            title="Remove the stale partial files so the torrent can start fresh — the source (magnet/torrent) is kept"
+            disabled={busy}
+            onClick={() => run(() => torrentApi.resetTorrentPartialData(t.id))}
+          >
+            Reset partial data
+          </button>
+        )}
         <span className="task-spacer" />
         <button
           type="button"

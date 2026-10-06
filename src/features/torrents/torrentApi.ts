@@ -22,6 +22,7 @@ export interface TorrentDto {
   selectedCount: number | null;
   files: TorrentFileDto[];
   downloadSpeedBps: number | null;
+  recoveryReason: string | null;
   errorCode: string | null;
   errorMessage: string | null;
 }
@@ -61,6 +62,10 @@ export function setTorrentFileSelection(
   selected: number[],
 ): Promise<void> {
   return call<void>("set_torrent_file_selection", { id, selected });
+}
+
+export function resetTorrentPartialData(id: string): Promise<number> {
+  return call<number>("reset_torrent_partial_data", { id });
 }
 
 export function pauseTorrent(id: string): Promise<void> {

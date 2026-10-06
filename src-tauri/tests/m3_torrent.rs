@@ -621,3 +621,102 @@ async fn readd_restores_saved_selection() {
     let _ = std::fs::remove_dir_all(temp_dir("seed-readd"));
     let _ = std::fs::remove_dir_all(work);
 }
+
+/// 1.0.8: "reset partial data" removes exactly the task's files (by the
+/// saved rows, containment-checked) and zeroes progress — this is the
+/// escape hatch when a re-add is wedged by stale partial data.
+#[tokio::test]
+async fn reset_partial_files_removes_task_files_and_rejects_escape() {
+    use ifuyo_tide_lib::core::torrent::recovery;
+    use ifuyo_tide_lib::persistence::repositories::TorrentFileRecord;
+
+    let seeder = spawn_seeder("reset", &[("one.mkv", 4096), ("two.bin", 2048)]).await;
+    let work = temp_dir("reset-work");
+    std::fs::write(work.join("one.mkv"), b"partial").unwrap();
+    std::fs::write(work.join("two.bin"), b"partial").unwrap();
+
+    let repo = std::sync::Arc::new(TorrentRepository::open_in_memory().unwrap());
+    let mut record = TorrentTaskRecord {
+        id: "reset-t1".into(),
+        info_hash: Some(seeder.info_hash.clone()),
+        source_kind: "magnet".into(),
+        magnet_uri: Some("magnet:?xt=urn:btih:0000000000000000000000000000000000000000".into()),
+        metadata_path: None,
+        metadata_sha256: None,
+        display_name: "reset-fixture".into(),
+        storage_root: work.clone(),
+        state: "paused".into(),
+        phase: "downloading".into(),
+        total_bytes: Some(6144),
+        downloaded_bytes: 4096,
+        uploaded_bytes: 0,
+        selected_count: Some(2),
+        error_code: None,
+        error_message: None,
+        recovery_reason: Some("readd_timeout".into()),
+        created_at: 0,
+        updated_at: 0,
+        completed_at: None,
+    };
+    repo.insert_task(&record).unwrap();
+    repo.replace_files(
+        "reset-t1",
+        &seeder.info_hash,
+        &[
+            TorrentFileRecord {
+                file_index: 0,
+                info_hash: seeder.info_hash.clone(),
+                relative_path: "one.mkv".into(),
+                size: 4096,
+                selected: true,
+            },
+            TorrentFileRecord {
+                file_index: 1,
+                info_hash: seeder.info_hash.clone(),
+                relative_path: "two.bin".into(),
+                size: 2048,
+                selected: true,
+            },
+        ],
+    )
+    .unwrap();
+
+    let removed = recovery::reset_partial_files(&record, &repo).unwrap();
+    assert_eq!(removed, 2);
+    assert!(!work.join("one.mkv").exists());
+    assert!(!work.join("two.bin").exists());
+    let after = repo.get_task("reset-t1").unwrap().unwrap();
+    assert_eq!(after.downloaded_bytes, 0);
+    assert_eq!(after.recovery_reason.as_deref(), Some("partial_reset"));
+
+    // A row whose path escapes the storage root must be refused, and
+    // the outside file must be untouched.
+    // Deterministic sibling of `work` so the literal `..` escape in the
+    // row resolves to it (temp_dir appends a random suffix per call).
+    let outside = work.parent().unwrap().join("reset-outside-evil");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("evil.txt"), b"outside").unwrap();
+    repo.replace_files(
+        "reset-t1",
+        &seeder.info_hash,
+        &[TorrentFileRecord {
+            file_index: 0,
+            info_hash: seeder.info_hash.clone(),
+            relative_path: format!(
+                "..{}reset-outside-evil{}evil.txt",
+                std::path::MAIN_SEPARATOR,
+                std::path::MAIN_SEPARATOR
+            ),
+            size: 7,
+            selected: true,
+        }],
+    )
+    .unwrap();
+    let err = recovery::reset_partial_files(&record, &repo).unwrap_err();
+    assert_eq!(err.code(), "SECURITY");
+    assert!(outside.join("evil.txt").exists());
+    record.recovery_reason = Some("partial_reset".into());
+    let _ = std::fs::remove_dir_all(work);
+    let _ = std::fs::remove_dir_all(outside);
+    let _ = std::fs::remove_dir_all(temp_dir("seed-reset"));
+}

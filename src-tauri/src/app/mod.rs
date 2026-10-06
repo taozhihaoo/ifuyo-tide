@@ -337,6 +337,7 @@ pub fn run() {
             commands::torrent::resume_torrent,
             commands::torrent::remove_torrent,
             commands::torrent::delete_torrent_data,
+            commands::torrent::reset_torrent_partial_data,
             // M7(上) scheduler commands
             commands::scheduler::scheduler_set_task_priority,
             commands::scheduler::scheduler_set_global_bandwidth_limit,

@@ -133,6 +133,65 @@ pub async fn readd_to_engine(
     }
 }
 
+/// Deletes the task's downloaded/partial files from disk (by the saved
+/// file rows, containment-checked against the storage root) and zeroes
+/// the row's progress. Used by "reset partial data" when a re-add is
+/// wedged by stale partial data (1.0.8): a fresh add over a clean
+/// directory cannot hit the librqbit stale-data hang. Returns the
+/// number of files removed.
+pub fn reset_partial_files(
+    record: &TorrentTaskRecord,
+    repo: &Arc<TorrentRepository>,
+) -> Result<u32, TideError> {
+    use crate::core::library::path::{canonicalize, is_contained};
+    use std::fs;
+
+    let root = canonicalize(&record.storage_root)?;
+    let files = repo.list_files(&record.id)?;
+    let mut removed = 0u32;
+    for file in &files {
+        let candidate = record.storage_root.join(&file.relative_path);
+        if !candidate.exists() {
+            continue;
+        }
+        let canonical = canonicalize(&candidate)?;
+        if !is_contained(&root, &canonical) {
+            return Err(TideError::Security(format!(
+                "torrent file path escapes the storage root: {}",
+                file.relative_path
+            )));
+        }
+        match fs::remove_file(&canonical) {
+            Ok(()) => removed += 1,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(TideError::Internal(format!(
+                    "failed to remove partial file {}: {err}",
+                    file.relative_path
+                )));
+            }
+        }
+    }
+    repo.update_task(
+        &record.id,
+        &record.state,
+        &record.phase,
+        record.info_hash.as_deref(),
+        record.total_bytes,
+        0,
+        record.uploaded_bytes,
+        record.selected_count,
+        None,
+        Some("partial_reset"),
+        record.completed_at,
+    )?;
+    crate::diagnostics::info(
+        "torrent.partial_data_reset",
+        &[("task_id", &record.id), ("files", &removed.to_string())],
+    );
+    Ok(removed)
+}
+
 async fn reconcile_one(
     record: &TorrentTaskRecord,
     repo: &Arc<TorrentRepository>,
