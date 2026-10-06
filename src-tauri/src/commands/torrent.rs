@@ -578,6 +578,9 @@ fn repo_update(
     record: &TorrentTaskRecord,
     completed_at: Option<i64>,
 ) {
+    // Preserve the row's recovery note (e.g. readd_timeout): generic
+    // progress/state writes used to null it out, which hid the
+    // "Reset partial data" affordance (1.0.10 finding).
     let _ = repo.update_task(
         id,
         state,
@@ -588,7 +591,7 @@ fn repo_update(
         record.uploaded_bytes,
         record.selected_count,
         None,
-        None,
+        record.recovery_reason.as_deref(),
         completed_at,
     );
 }

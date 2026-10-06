@@ -3,6 +3,18 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.10 — 2026-10-07
+
+Patch release.
+
+### Fixed
+
+- Generic progress/state writes used to clear the row's recovery
+  note (`readd_timeout`), which hid the "Reset partial data" button
+  exactly on the tasks that needed it. The note is now preserved
+  across progress writes; only an actual reset or a new recovery
+  outcome changes it.
+
 ## 1.0.9 — 2026-10-07
 
 Patch release.

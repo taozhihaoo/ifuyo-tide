@@ -19,7 +19,7 @@
 
 param(
     [string]$ExePath = "src-tauri\target\release\ifuyo-tide.exe",
-    [string]$ExpectedVersion = "1.0.9",
+    [string]$ExpectedVersion = "1.0.10",
     [int]$IdleSampleSeconds = 8,
     # Reusing a fixed -DataRoot across runs (e.g. around an installer
     # upgrade) turns the seeded-row check into a data-preservation
