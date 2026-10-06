@@ -10,6 +10,12 @@ by direct request).
 
 ### Added
 
+- **Default public trackers merged into added torrents** (Settings →
+  Torrents, toggle, default on): peer discovery no longer depends on
+  DHT alone — on networks that filter DHT bootstrap traffic,
+  tracker-less magnets could never find peers. Announcing to the
+  listed public trackers is standard BitTorrent behavior (disclosed
+  in the setting's help text).
 - **中文界面 / Chinese UI with a working language switcher**
   (Settings → Language, applies immediately, persisted): every view —
   downloads, torrents, library, player, settings, welcome, error
