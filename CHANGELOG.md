@@ -3,6 +3,20 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.2.0 — 2026-10-07
+
+Feature release: fixes "magnets never find peers" on networks where
+DHT bootstrap traffic is filtered (verified on the developer's
+network: UDP egress works, all four public DHT routers are silent).
+
+### Added
+
+- **Default public trackers merged into added torrents** (Settings →
+  Torrents, toggle, default on): peer discovery no longer depends on
+  DHT alone. Announcing to the listed public trackers is standard
+  BitTorrent behavior (disclosed in the setting's help text). The
+  setting applies to newly added tasks and takes effect live.
+
 ## 1.1.0 — 2026-10-07
 
 First feature release after 1.0 (pulled forward from the 1.1 backlog
@@ -10,12 +24,6 @@ by direct request).
 
 ### Added
 
-- **Default public trackers merged into added torrents** (Settings →
-  Torrents, toggle, default on): peer discovery no longer depends on
-  DHT alone — on networks that filter DHT bootstrap traffic,
-  tracker-less magnets could never find peers. Announcing to the
-  listed public trackers is standard BitTorrent behavior (disclosed
-  in the setting's help text).
 - **中文界面 / Chinese UI with a working language switcher**
   (Settings → Language, applies immediately, persisted): every view —
   downloads, torrents, library, player, settings, welcome, error
