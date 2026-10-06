@@ -62,6 +62,11 @@ pub struct AddedTorrent {
 /// resources reach the engine through it (M4(上)).
 #[derive(Clone)]
 pub struct TorrentEngine {
+    /// 1.1.1: public trackers merged into every added torrent (helps on
+    /// networks where DHT bootstrap is filtered — magnet-only tasks
+    /// otherwise cannot find peers). None = use the torrent's own
+    /// trackers only. Swappable at runtime via set_extra_trackers.
+    extra_trackers: std::sync::Arc<std::sync::Mutex<Option<Vec<String>>>>,
     session: Arc<Session>,
     initial_peers: Option<Vec<SocketAddr>>,
 }
@@ -107,6 +112,7 @@ impl TorrentEngine {
                 TideError::Internal(format!("failed to initialize torrent session: {err}"))
             })?;
         Ok(TorrentEngine {
+            extra_trackers: std::sync::Arc::new(std::sync::Mutex::new(None)),
             session,
             initial_peers: config.initial_peers.clone(),
         })
@@ -220,6 +226,10 @@ impl TorrentEngine {
                     only_files,
                     initial_peers,
                     paused,
+                    // 1.1.1: merge the configured public trackers so
+                    // peer discovery does not depend on DHT alone
+                    // (networks that filter DHT bootstrap traffic).
+                    trackers: self.extra_trackers_snapshot(),
                     // Re-adding over existing files resumes; librqbit
                     // re-verifies pieces (M3 §22 corruption recovery).
                     overwrite: true,
@@ -381,6 +391,19 @@ impl TorrentEngine {
 
     /// M7(上) §25/§12: session-level download rate via librqbit's
     /// PUBLIC ratelimits API — no private modules. `None` = unlimited.
+    /// Sets the public trackers merged into every subsequently added
+    /// torrent (Settings toggle, 1.1.1). `None`/empty disables.
+    pub fn set_extra_trackers(&self, trackers: Option<Vec<String>>) {
+        *self.extra_trackers.lock().expect("extra trackers mutex") = trackers;
+    }
+
+    fn extra_trackers_snapshot(&self) -> Option<Vec<String>> {
+        self.extra_trackers
+            .lock()
+            .expect("extra trackers mutex")
+            .clone()
+    }
+
     pub fn set_download_rate_bps(&self, bps: Option<u64>) {
         let capped = bps
             .and_then(|b| u32::try_from(b.min(u32::MAX as u64)).ok())

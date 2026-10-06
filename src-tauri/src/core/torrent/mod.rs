@@ -9,6 +9,7 @@ pub mod engine;
 pub mod monitor;
 pub mod recovery;
 pub mod source;
+pub mod trackers;
 
 pub use engine::{AddedTorrent, TorrentEngine, TorrentEngineConfig, TorrentStatus};
 pub use recovery::recover_torrents;

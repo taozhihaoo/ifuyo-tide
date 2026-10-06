@@ -818,3 +818,41 @@ async fn magnet_empty_intake_downloads_nothing_until_resume_sync() {
     let _ = std::fs::remove_dir_all(temp_dir("seed-intake"));
     let _ = std::fs::remove_dir_all(work);
 }
+
+/// 1.1.1: the engine's extra public trackers are merged into added
+/// torrents (peer discovery must not depend on DHT alone on
+/// DHT-filtered networks).
+#[tokio::test]
+async fn extra_trackers_are_merged_into_added_torrents() {
+    let seeder = spawn_seeder("trackers", &[("x.mp3", 4096)]).await;
+    let engine = test_engine(temp_dir("trackers-meta"), Some(vec![seeder.listen_addr])).await;
+    let work = temp_dir("trackers-work");
+
+    engine.set_extra_trackers(Some(vec![
+        "http://tracker.example.com:1337/announce".into(),
+        "udp://tracker.example.org:1337/announce".into(),
+    ]));
+
+    let added = engine
+        .add_torrent_bytes(seeder.torrent_bytes.clone(), &work, None, None, true)
+        .await
+        .expect("add");
+
+    let tracker_urls: Vec<String> = added
+        .handle
+        .shared
+        .trackers
+        .iter()
+        .map(|u| u.to_string())
+        .collect();
+    assert!(
+        tracker_urls
+            .iter()
+            .any(|u| u.contains("tracker.example.com")),
+        "extra tracker must be merged: {:?}",
+        tracker_urls
+    );
+    engine.shutdown().await;
+    let _ = std::fs::remove_dir_all(temp_dir("seed-trackers"));
+    let _ = std::fs::remove_dir_all(work);
+}

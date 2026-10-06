@@ -72,6 +72,26 @@ pub fn run() {
             Ok(repo) => std::sync::Arc::new(repo),
             Err(err) => fatal_startup("failed to open torrent repository", &err),
         };
+    // 1.1.1: merge the default public trackers into added torrents
+    // (default on; Settings toggle). Peer discovery then does not rely
+    // on DHT alone, which matters on DHT-filtered networks.
+    {
+        // Read failure keeps the default (on) — never a startup failure.
+        let enabled = crate::persistence::open(&dirs.database_file)
+            .map(|conn| {
+                conn.query_row(
+                    "SELECT value FROM settings WHERE key = 'torrent_public_trackers'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .map(|v| v != "0")
+                .unwrap_or(true)
+            })
+            .unwrap_or(true);
+        if enabled {
+            torrent_engine.set_extra_trackers(crate::core::torrent::trackers::default_trackers());
+        }
+    }
     // M3 torrent recovery (M3 §15): re-add persisted torrent tasks to
     // the session PAUSED; the user resumes explicitly. Runs on a
     // BACKGROUND task: a slow or hung engine re-add (librqbit can stall
@@ -340,6 +360,8 @@ pub fn run() {
             commands::torrent::remove_torrent,
             commands::torrent::delete_torrent_data,
             commands::torrent::reset_torrent_partial_data,
+            commands::torrent::get_public_trackers_enabled,
+            commands::torrent::set_public_trackers_enabled,
             // M7(上) scheduler commands
             commands::scheduler::scheduler_set_task_priority,
             commands::scheduler::scheduler_set_global_bandwidth_limit,

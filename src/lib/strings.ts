@@ -160,6 +160,10 @@ const en = {
     globalLimitAria: "Global download limit in megabytes per second",
     bandwidthRemoved: "Bandwidth limit removed (unlimited).",
     bandwidthSet: (mbps: number) => `Bandwidth limit set to ${mbps} MB/s.`,
+    torrentGroup: "Torrents (M3)",
+    publicTrackers: "Add public trackers to torrents",
+    publicTrackersHelp:
+      "Merges well-known public trackers into added torrents so peer discovery works even where DHT is filtered. Announcing to these trackers is standard BitTorrent behavior.",
     libraryGroup: "Library folders (M6)",
     addLibraryFolderTitle: "Add a library folder",
     libraryFolderAdded: (name: string) =>
@@ -375,6 +379,10 @@ const zh: typeof en = {
     globalLimitAria: "全局下载限速（MB/s）",
     bandwidthRemoved: "已取消限速（不限速）。",
     bandwidthSet: (mbps: number) => `限速已设为 ${mbps} MB/s。`,
+    torrentGroup: "种子（M3）",
+    publicTrackers: "为种子添加公共 tracker",
+    publicTrackersHelp:
+      "把知名公共 tracker 合并进添加的种子任务，使 Peer 发现不依赖 DHT（部分网络会过滤 DHT）。向这些 tracker 汇报是 BitTorrent 的标准行为。",
     libraryGroup: "媒体库目录（M6）",
     addLibraryFolderTitle: "添加媒体库文件夹",
     libraryFolderAdded: (name: string) => `媒体库文件夹已添加：${name}。到媒体库按“扫描”建立索引。`,

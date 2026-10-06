@@ -570,6 +570,47 @@ pub async fn reset_torrent_partial_data(
     Ok(removed)
 }
 
+const KEY_PUBLIC_TRACKERS: &str = "torrent_public_trackers";
+
+/// 1.1.1: whether the configured default public trackers are merged
+/// into added torrents (default on — helps on DHT-filtered networks).
+#[tauri::command]
+pub fn get_public_trackers_enabled(state: State<'_, AppState>) -> Result<bool, TideError> {
+    state.with_conn(|conn| {
+        Ok(state
+            .settings_repository
+            .get(conn, KEY_PUBLIC_TRACKERS)?
+            .map(|v| v != "0")
+            .unwrap_or(true))
+    })
+}
+
+#[tauri::command]
+pub fn set_public_trackers_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), TideError> {
+    state.with_conn(|conn| {
+        state
+            .settings_repository
+            .set(conn, KEY_PUBLIC_TRACKERS, if enabled { "1" } else { "0" })
+    })?;
+    // Live effect for subsequently added torrents.
+    state.torrent_engine.set_extra_trackers(if enabled {
+        crate::core::torrent::trackers::default_trackers()
+    } else {
+        None
+    });
+    crate::diagnostics::info(
+        "settings.updated",
+        &[
+            ("key", KEY_PUBLIC_TRACKERS),
+            ("value", if enabled { "1" } else { "0" }),
+        ],
+    );
+    Ok(())
+}
+
 fn repo_update(
     repo: &TorrentRepository,
     id: &str,

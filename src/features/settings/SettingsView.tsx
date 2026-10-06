@@ -14,6 +14,10 @@ import {
 } from "../library/libraryApi";
 import { setGlobalBandwidthLimit } from "../player/playbackApi";
 import {
+  getPublicTrackersEnabled,
+  setPublicTrackersEnabled,
+} from "../torrents/torrentApi";
+import {
   autostartDisable,
   autostartEnable,
   autostartIsEnabled,
@@ -39,6 +43,7 @@ export function SettingsView() {
   const [bandwidthInput, setBandwidthInput] = useState(0);
   const [win, setWin] = useState<WindowsSettingsDto | null>(null);
   const [autostart, setAutostart] = useState(false);
+  const [publicTrackers, setPublicTrackers] = useState(true);
 
   useEffect(() => {
     void (async () => {
@@ -49,6 +54,7 @@ export function SettingsView() {
         setRoots(await listRoots());
         setWin(await getWindowsSettings());
         setAutostart(await autostartIsEnabled());
+        setPublicTrackers(await getPublicTrackersEnabled());
       } catch (err) {
         setError(errorMessage(err));
       } finally {
@@ -270,6 +276,29 @@ export function SettingsView() {
             </div>
           </>
         )}
+      </div>
+
+      <div className="settings-group">
+        <div className="settings-group-title">{strings.settingsView.torrentGroup}</div>
+        <div className="setting-row">
+          <div className="setting-text">
+            <span className="setting-label">{strings.settingsView.publicTrackers}</span>
+            <span className="setting-help">{strings.settingsView.publicTrackersHelp}</span>
+          </div>
+          <input
+            type="checkbox"
+            aria-label={strings.settingsView.publicTrackers}
+            checked={publicTrackers}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setPublicTrackers(on);
+              void setPublicTrackersEnabled(on).catch((err) => {
+                setPublicTrackers(!on);
+                setError(errorMessage(err));
+              });
+            }}
+          />
+        </div>
       </div>
 
       <div className="settings-group">

@@ -68,6 +68,14 @@ export function resetTorrentPartialData(id: string): Promise<number> {
   return call<number>("reset_torrent_partial_data", { id });
 }
 
+export function getPublicTrackersEnabled(): Promise<boolean> {
+  return call<boolean>("get_public_trackers_enabled");
+}
+
+export function setPublicTrackersEnabled(enabled: boolean): Promise<void> {
+  return call<void>("set_public_trackers_enabled", { enabled });
+}
+
 export function pauseTorrent(id: string): Promise<void> {
   return call<void>("pause_torrent", { id });
 }
