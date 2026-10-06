@@ -3,6 +3,21 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.1.0 — 2026-10-07
+
+First feature release after 1.0 (pulled forward from the 1.1 backlog
+by direct request).
+
+### Added
+
+- **中文界面 / Chinese UI with a working language switcher**
+  (Settings → Language, applies immediately, persisted): every view —
+  downloads, torrents, library, player, settings, welcome, error
+  states — is available in English and Simplified Chinese. Task state
+  labels and the structured download-error explanations are localized
+  too. Key-tree parity between the two dictionaries is enforced at
+  compile time and sampled by tests.
+
 ## 1.0.11 — 2026-10-07
 
 Patch release.
