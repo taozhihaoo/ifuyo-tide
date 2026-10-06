@@ -42,14 +42,11 @@ pub async fn recover_torrents(
     Ok(outcomes)
 }
 
-async fn reconcile_one(
-    record: &TorrentTaskRecord,
-    repo: &Arc<TorrentRepository>,
-    engine: &TorrentEngine,
-) -> Result<TorrentRecoveryOutcome, TideError> {
-    // Metadata-copies are persisted for torrent_file sources; magnets
-    // re-resolve from the stored URI.
-    let metadata_bytes = match record.source_kind.as_str() {
+/// Metadata-copies are persisted for torrent_file sources; magnets
+/// re-resolve from the stored URI. Shared by startup recovery and the
+/// on-demand re-add in resume (1.0.6).
+pub fn load_metadata_bytes(record: &TorrentTaskRecord) -> Result<Option<Vec<u8>>, TideError> {
+    match record.source_kind.as_str() {
         "torrent_file" => {
             let path = record
                 .metadata_path
@@ -66,15 +63,82 @@ async fn reconcile_one(
                         },
                     )
                 })?;
-            Some(std::fs::read(path)?)
+            Ok(Some(std::fs::read(path)?))
         }
-        "magnet" => None,
-        other => {
-            return Err(TideError::Internal(format!(
-                "unknown torrent source kind: {other}"
-            )));
+        "magnet" => Ok(None),
+        other => Err(TideError::Internal(format!(
+            "unknown torrent source kind: {other}"
+        ))),
+    }
+}
+
+/// The user's saved file selection as engine `only_files` indices.
+/// None = download everything (no file rows yet, or all selected).
+pub fn saved_selection(
+    repo: &Arc<TorrentRepository>,
+    record: &TorrentTaskRecord,
+) -> Result<Option<Vec<usize>>, TideError> {
+    let files = repo.list_files(&record.id)?;
+    if files.is_empty() || files.iter().all(|f| f.selected) {
+        return Ok(None);
+    }
+    Ok(Some(
+        files
+            .iter()
+            .filter(|f| f.selected)
+            .map(|f| f.file_index as usize)
+            .collect(),
+    ))
+}
+
+/// Re-adds a persisted task to the engine, restoring the saved file
+/// selection. Shared by startup recovery and on-demand resume re-add.
+pub async fn readd_to_engine(
+    engine: &TorrentEngine,
+    record: &TorrentTaskRecord,
+    metadata_bytes: Option<Vec<u8>>,
+    paused: bool,
+    only_files: Option<Vec<usize>>,
+) -> Result<super::engine::AddedTorrent, TideError> {
+    match (record.source_kind.as_str(), &metadata_bytes) {
+        ("torrent_file", Some(bytes)) => {
+            engine
+                .add_torrent_bytes(
+                    bytes.clone(),
+                    &record.storage_root,
+                    only_files,
+                    None,
+                    paused,
+                )
+                .await
         }
-    };
+        ("magnet", _) => {
+            let uri = record
+                .magnet_uri
+                .clone()
+                .ok_or_else(|| TideError::Internal("magnet task without magnet URI".into()))?;
+            let added = engine
+                .add_magnet(uri, &record.storage_root, None, paused)
+                .await?;
+            // Magnets accept no only_files at add time (the metadata may
+            // still be resolving) — apply the saved selection after.
+            if let Some(files) = &only_files {
+                engine.set_only_files(&added.handle, files).await?;
+            }
+            Ok(added)
+        }
+        (kind, _) => Err(TideError::Internal(format!(
+            "unknown torrent source kind: {kind}"
+        ))),
+    }
+}
+
+async fn reconcile_one(
+    record: &TorrentTaskRecord,
+    repo: &Arc<TorrentRepository>,
+    engine: &TorrentEngine,
+) -> Result<TorrentRecoveryOutcome, TideError> {
+    let metadata_bytes = load_metadata_bytes(record)?;
 
     // Re-validate the metadata paths (M3 §12: never trust stored input).
     if let Some(bytes) = &metadata_bytes {
@@ -137,33 +201,11 @@ async fn reconcile_one(
     // stale partial data (observed in real use, 1.0.3 investigation) —
     // one bad task must not wedge engine availability forever. On
     // timeout the row keeps its state and the user can retry manually.
-    let readd = async {
-        match (record.source_kind.as_str(), &metadata_bytes) {
-            ("torrent_file", Some(bytes)) => {
-                engine
-                    .add_torrent_bytes(
-                        bytes.clone(),
-                        &record.storage_root,
-                        None,
-                        None,
-                        true, // paused: never auto-resume on startup
-                    )
-                    .await
-            }
-            ("magnet", _) => {
-                let uri = record
-                    .magnet_uri
-                    .clone()
-                    .ok_or_else(|| TideError::Internal("magnet task without magnet URI".into()))?;
-                engine
-                    .add_magnet(uri, &record.storage_root, None, true)
-                    .await
-            }
-            (kind, _) => Err(TideError::Internal(format!(
-                "unknown torrent source kind: {kind}"
-            ))),
-        }
-    };
+    // Re-add restores the user's saved selection — previously the
+    // engine came back with every file selected regardless of the
+    // checkboxes (1.0.6 real-use finding).
+    let only_files = saved_selection(repo, record)?;
+    let readd = async { readd_to_engine(engine, record, metadata_bytes, true, only_files).await };
     let added = match tokio::time::timeout(std::time::Duration::from_secs(60), readd).await {
         Ok(result) => result?,
         Err(_) => {

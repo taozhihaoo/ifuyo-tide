@@ -550,3 +550,74 @@ async fn monitor_backfills_magnet_metadata_and_preserves_pause() {
     let _ = std::fs::remove_dir_all(temp_dir("seed-monitor"));
     let _ = std::fs::remove_dir_all(work);
 }
+
+/// 1.0.6 regression: the on-demand re-add (resume of a task that is
+/// not in the engine — startup re-add timed out) must restore the
+/// saved selection: only checked files download, unchecked files never
+/// appear on disk.
+#[tokio::test]
+async fn readd_restores_saved_selection() {
+    let seeder = spawn_seeder(
+        "readd",
+        &[("keep.mkv", 256 * 1024), ("skip.bin", 128 * 1024)],
+    )
+    .await;
+    let engine = test_engine(temp_dir("readd-meta"), Some(vec![seeder.listen_addr])).await;
+    let work = temp_dir("readd-work");
+
+    // Build the record the way recovery/resume see it: .torrent source
+    // with a metadata copy, selection saved in the file rows (f0 only).
+    let meta_path = temp_dir("readd-meta-copy").join("copy.torrent");
+    std::fs::write(&meta_path, &seeder.torrent_bytes).unwrap();
+    let record = ifuyo_tide_lib::persistence::repositories::TorrentTaskRecord {
+        id: "readd-t1".into(),
+        info_hash: Some(seeder.info_hash.clone()),
+        source_kind: "torrent_file".into(),
+        magnet_uri: None,
+        metadata_path: Some(meta_path),
+        metadata_sha256: None,
+        display_name: seeder.info_hash.clone(),
+        storage_root: work.clone(),
+        state: "ready".into(),
+        phase: "downloading".into(),
+        total_bytes: Some(256 * 1024 + 128 * 1024),
+        downloaded_bytes: 0,
+        uploaded_bytes: 0,
+        selected_count: Some(1),
+        error_code: None,
+        error_message: None,
+        recovery_reason: Some("readd_timeout".into()),
+        created_at: 0,
+        updated_at: 0,
+        completed_at: None,
+    };
+
+    let metadata_bytes =
+        ifuyo_tide_lib::core::torrent::recovery::load_metadata_bytes(&record).unwrap();
+    let added = ifuyo_tide_lib::core::torrent::recovery::readd_to_engine(
+        &engine,
+        &record,
+        metadata_bytes,
+        false,
+        Some(vec![0]),
+    )
+    .await
+    .expect("re-add");
+    // paused=false in the re-add: the torrent is live already — the
+    // resume command does not (and must not) call unpause after it.
+    wait_completed(&engine, &added.info_hash, Duration::from_secs(60)).await;
+
+    let keep = work.join("keep.mkv");
+    assert!(keep.exists(), "selected file must download");
+    assert_eq!(std::fs::metadata(&keep).unwrap().len(), 256 * 1024);
+    // librqbit may create a placeholder for unselected files — assert
+    // it was never downloaded in full (same rule as the T03 test).
+    let skip = work.join("skip.bin");
+    assert!(
+        !skip.exists() || std::fs::metadata(&skip).unwrap().len() < 128 * 1024,
+        "deselected file must not be downloaded"
+    );
+    engine.shutdown().await;
+    let _ = std::fs::remove_dir_all(temp_dir("seed-readd"));
+    let _ = std::fs::remove_dir_all(work);
+}

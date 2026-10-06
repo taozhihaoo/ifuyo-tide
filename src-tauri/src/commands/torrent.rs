@@ -400,12 +400,50 @@ pub async fn resume_torrent(state: State<'_, AppState>, id: String) -> Result<()
         .clone()
         .ok_or_else(|| TideError::InvalidInput("torrent metadata is not resolved yet".into()))?;
     let engine = &state.torrent_engine;
-    if let Some(handle) = engine.handle_for(&hash) {
-        engine.resume(&handle).await?;
-    } else {
-        return Err(TideError::NotFound(
-            "torrent is not in the engine — restart the app to recover it".into(),
-        ));
+    match engine.handle_for(&hash) {
+        Some(handle) => engine.resume(&handle).await?,
+        None => {
+            // Not in the session — the startup re-add may have timed out
+            // (1.0.4 bounded recovery on stale partial data). Re-add on
+            // demand, LIVE, honoring the saved selection, instead of
+            // telling the user to "restart the app" (which would hit
+            // the same timeout loop — 1.0.6 real-use finding).
+            let metadata_bytes = crate::core::torrent::recovery::load_metadata_bytes(&record)?;
+            let only_files = crate::core::torrent::recovery::saved_selection(
+                &state.torrent_repository,
+                &record,
+            )?;
+            let readd = crate::core::torrent::recovery::readd_to_engine(
+                engine,
+                &record,
+                metadata_bytes,
+                false,
+                only_files,
+            );
+            let added = match tokio::time::timeout(std::time::Duration::from_secs(60), readd).await
+            {
+                Ok(result) => result?,
+                Err(_) => {
+                    return Err(TideError::Internal(
+                        "torrent engine is stuck re-adding this torrent — its partial data may be inconsistent. Use Remove (keep files) or Delete data, then add the source again".into(),
+                    ));
+                }
+            };
+            let new_phase = if engine.metadata_resolved(&added.handle) {
+                "downloading"
+            } else {
+                "metadata_pending"
+            };
+            repo_update(
+                &state.torrent_repository,
+                &id,
+                "running",
+                new_phase,
+                &record,
+                None,
+            );
+            return Ok(());
+        }
     }
     repo_update(
         &state.torrent_repository,
