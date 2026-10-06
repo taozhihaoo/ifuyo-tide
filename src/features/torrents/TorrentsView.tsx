@@ -162,10 +162,18 @@ function TorrentCard({
       : null;
 
   const [actionError, setActionError] = useState<string | null>(null);
+  // Actions can legitimately take a while (resume may re-add the
+  // torrent on demand, bounded by engine timeouts) — show it, and
+  // refuse re-entrant clicks instead of stacking requests.
+  const [busy, setBusy] = useState(false);
   const run = (fn: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
     fn()
       .then(onChanged)
-      .catch((err) => setActionError(String(err)));
+      .catch((err) => setActionError(String(err)))
+      .finally(() => setBusy(false));
   };
 
   const setSelection = (index: number) => {
@@ -222,18 +230,20 @@ function TorrentCard({
           <button
             type="button"
             className="btn btn-small"
+            disabled={busy}
             onClick={() => run(() => torrentApi.pauseTorrent(t.id))}
           >
-            Pause
+            {busy ? "Pausing…" : "Pause"}
           </button>
         )}
         {(t.state === "paused" || t.state === "ready") && (
           <button
             type="button"
             className="btn btn-small"
+            disabled={busy}
             onClick={() => run(() => torrentApi.resumeTorrent(t.id))}
           >
-            Resume
+            {busy ? "Starting…" : "Resume"}
           </button>
         )}
         <button
@@ -243,6 +253,7 @@ function TorrentCard({
         >
           {showFiles ? "Hide files" : `Files (${t.files.length})`}
         </button>
+        {busy && <span className="dim">working…</span>}
         <span className="task-spacer" />
         <button
           type="button"
@@ -269,7 +280,7 @@ function TorrentCard({
                 type="checkbox"
                 aria-label={`Download ${f.path}`}
                 checked={f.selected}
-                disabled={t.state === "completed"}
+                disabled={t.state === "completed" || busy}
                 onChange={() => setSelection(f.index)}
               />
               <span className="file-index">#{f.index}</span> {f.path}{" "}
