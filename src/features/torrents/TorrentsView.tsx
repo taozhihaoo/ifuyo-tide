@@ -212,7 +212,19 @@ function TorrentCard({
           </span>
           {t.state === "running" && speed > 0 && <span>{formatSpeed(speed)}</span>}
           {etaSecs != null && <span>ETA {formatEta(etaSecs)}</span>}
-          {t.selectedCount != null && <span>{t.selectedCount} files selected</span>}
+          {(() => {
+            const checked = t.files.filter((f) => f.selected);
+            if (checked.length === 0 && t.selectedCount == null) return null;
+            const count = checked.length || t.selectedCount || 0;
+            const size = checked.reduce((sum, f) => sum + f.size, 0);
+            const sizeLabel =
+              checked.length > 0 ? ` · ${formatBytes(size)} selected` : "";
+            return (
+              <span>
+                {count} of {t.files.length || count} files{sizeLabel}
+              </span>
+            );
+          })()}
         </div>
       </div>
       {t.errorMessage && (
@@ -236,7 +248,7 @@ function TorrentCard({
             {busy ? "Pausing…" : "Pause"}
           </button>
         )}
-        {(t.state === "paused" || t.state === "ready") && (
+        {(t.state === "paused" || (t.state === "ready" && t.phase !== "metadata_pending")) && (
           <button
             type="button"
             className="btn btn-small"

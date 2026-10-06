@@ -3,6 +3,19 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.11 — 2026-10-07
+
+Patch release.
+
+### Improved
+
+- The selection line now shows what is actually checked with its size
+  ("1 of 5 files · 4.6 GB selected"), matching the state after the
+  1.0.5 truthfulness fix.
+- The Resume button is hidden while a magnet is still resolving its
+  metadata (there is nothing to resume yet; clicking it would only
+  error).
+
 ## 1.0.10 — 2026-10-07
 
 Patch release.
