@@ -82,8 +82,7 @@ pub fn run() {
         let torrent_engine = torrent_engine.clone();
         let torrent_repository = torrent_repository.clone();
         tauri::async_runtime::spawn(async move {
-            match crate::core::torrent::recover_torrents(&torrent_repository, &torrent_engine)
-                .await
+            match crate::core::torrent::recover_torrents(&torrent_repository, &torrent_engine).await
             {
                 Ok(outcomes) => {
                     diagnostics::info(
