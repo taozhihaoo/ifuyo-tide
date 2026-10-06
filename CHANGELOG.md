@@ -3,6 +3,24 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.6 — 2026-10-07
+
+Patch release from real-use validation of torrent recovery.
+
+### Fixed
+
+- **"torrent is not in the engine — restart the app" loop**: when a
+  torrent's startup re-add times out (stale partial data — the 1.0.4
+  bound working as designed), the task stayed out of the engine and
+  every Resume bounced with "restart the app", which just hit the
+  same timeout again. Resume now **re-adds the torrent on demand**
+  (live, honoring the saved file selection) and only reports an
+  error — with an actionable message — if the engine is genuinely
+  stuck.
+- Startup recovery and on-demand re-add now **restore the saved file
+  selection**: the engine used to come back with every file selected
+  regardless of the checkboxes.
+
 ## 1.0.5 — 2026-10-06
 
 Patch release.
