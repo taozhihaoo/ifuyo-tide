@@ -531,6 +531,21 @@ async fn monitor_backfills_magnet_metadata_and_preserves_pause() {
     assert_eq!(after.state, "paused");
     assert_eq!(after.phase, "downloading");
 
+    // No-phantom-running (1.0.4): a ready task with ZERO flowing bytes
+    // must not be rewritten to running by the monitor — recovery adds
+    // the engine paused; only the user's resume or real progress may
+    // ever say running.
+    let mut r2 = record.clone();
+    r2.id = "monitor-t2".into();
+    r2.state = "ready".into();
+    r2.phase = "downloading".into();
+    r2.total_bytes = Some(262154);
+    r2.selected_count = Some(2);
+    repo.insert_task(&r2).unwrap();
+    monitor::tick(&engine, &repo, &library).await.unwrap();
+    let after2 = repo.get_task("monitor-t2").unwrap().unwrap();
+    assert_eq!(after2.state, "ready");
+
     engine.shutdown().await;
     let _ = std::fs::remove_dir_all(temp_dir("seed-monitor"));
     let _ = std::fs::remove_dir_all(work);

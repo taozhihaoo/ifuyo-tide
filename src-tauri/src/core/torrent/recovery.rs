@@ -133,31 +133,59 @@ async fn reconcile_one(
         .map(|c| (c, record.error_message.clone().unwrap_or_default()));
 
     // Re-add PAUSED: startup recovery never auto-resumes (M3 §16/M2 §68).
-    let added = match (record.source_kind.as_str(), &metadata_bytes) {
-        ("torrent_file", Some(bytes)) => {
-            engine
-                .add_torrent_bytes(
-                    bytes.clone(),
-                    &record.storage_root,
-                    None,
-                    None,
-                    true, // paused: never auto-resume on startup
-                )
-                .await?
-        }
-        ("magnet", _) => {
-            let uri = record
-                .magnet_uri
-                .clone()
-                .ok_or_else(|| TideError::Internal("magnet task without magnet URI".into()))?;
-            engine
-                .add_magnet(uri, &record.storage_root, None, true)
-                .await?
-        }
-        (kind, _) => {
-            return Err(TideError::Internal(format!(
+    // Bounded: librqbit can stall indefinitely re-adding a torrent over
+    // stale partial data (observed in real use, 1.0.3 investigation) —
+    // one bad task must not wedge engine availability forever. On
+    // timeout the row keeps its state and the user can retry manually.
+    let readd = async {
+        match (record.source_kind.as_str(), &metadata_bytes) {
+            ("torrent_file", Some(bytes)) => {
+                engine
+                    .add_torrent_bytes(
+                        bytes.clone(),
+                        &record.storage_root,
+                        None,
+                        None,
+                        true, // paused: never auto-resume on startup
+                    )
+                    .await
+            }
+            ("magnet", _) => {
+                let uri = record
+                    .magnet_uri
+                    .clone()
+                    .ok_or_else(|| TideError::Internal("magnet task without magnet URI".into()))?;
+                engine
+                    .add_magnet(uri, &record.storage_root, None, true)
+                    .await
+            }
+            (kind, _) => Err(TideError::Internal(format!(
                 "unknown torrent source kind: {kind}"
-            )));
+            ))),
+        }
+    };
+    let added = match tokio::time::timeout(std::time::Duration::from_secs(60), readd).await {
+        Ok(result) => result?,
+        Err(_) => {
+            crate::diagnostics::warn("torrent_recovery_readd_timeout", &[("task_id", &record.id)]);
+            repo.update_task(
+                &record.id,
+                &record.state,
+                &record.phase,
+                record.info_hash.as_deref(),
+                record.total_bytes,
+                record.downloaded_bytes,
+                record.uploaded_bytes,
+                record.selected_count,
+                None,
+                Some("readd_timeout"),
+                record.completed_at,
+            )?;
+            return Ok(TorrentRecoveryOutcome {
+                task_id: record.id.clone(),
+                action: "skipped",
+                reason: "readd_timeout",
+            });
         }
     };
 

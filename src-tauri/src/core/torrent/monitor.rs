@@ -127,23 +127,23 @@ pub async fn tick(
 
         let stats = engine.stats(&handle);
         if !stats.finished {
-            // Keep the row's progress roughly current for the UI — but
-            // never resurrect a paused task: pause is a user decision
-            // and must survive monitor ticks (and restarts).
-            let state = if record.state == "paused" {
-                "paused"
-            } else {
-                "running"
-            };
-            let phase = if resolved {
-                "downloading"
-            } else {
-                "metadata_pending"
-            };
-            if stats.progress_bytes != record.downloaded_bytes
-                || state != record.state
-                || phase != record.phase
-            {
+            // Write ONLY on real byte progress. State-diff writes are
+            // forbidden here: recovery re-adds the engine PAUSED and
+            // marks the row ready/resumable — "correcting" the row to
+            // running with zero bytes flowing used to fake a Running
+            // badge over a paused engine (1.0.3 real-use finding).
+            // Paused is a user decision and must survive ticks too.
+            if stats.progress_bytes != record.downloaded_bytes {
+                let state = if record.state == "paused" {
+                    "paused"
+                } else {
+                    "running"
+                };
+                let phase = if resolved {
+                    "downloading"
+                } else {
+                    "metadata_pending"
+                };
                 repo.update_task(
                     &record.id,
                     state,

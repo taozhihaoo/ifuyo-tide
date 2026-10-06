@@ -67,6 +67,11 @@ pub struct TorrentEngine {
 }
 
 impl TorrentEngine {
+    /// Bound for session mutators (pause/resume/selection): librqbit
+    /// awaits internal state transitions that can stall on a torrent
+    /// stuck mid-add — the IPC must fail visibly, never hang.
+    const MUTATOR_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
     /// Creates the single librqbit Session (M3 §34).
     ///
     /// Safety defaults (M3 §26): UPnP port forwarding OFF, no HTTP API,
@@ -305,17 +310,25 @@ impl TorrentEngine {
     }
 
     pub async fn pause(&self, handle: &Arc<ManagedTorrent>) -> Result<(), TideError> {
-        self.session
-            .pause(handle)
-            .await
-            .map_err(|err| TideError::Internal(format!("torrent pause failed: {err}")))
+        match tokio::time::timeout(Self::MUTATOR_TIMEOUT, self.session.pause(handle)).await {
+            Ok(result) => {
+                result.map_err(|err| TideError::Internal(format!("torrent pause failed: {err}")))
+            }
+            Err(_) => Err(TideError::Internal(
+                "torrent pause timed out (engine busy)".into(),
+            )),
+        }
     }
 
     pub async fn resume(&self, handle: &Arc<ManagedTorrent>) -> Result<(), TideError> {
-        self.session
-            .unpause(handle)
-            .await
-            .map_err(|err| TideError::Internal(format!("torrent resume failed: {err}")))
+        match tokio::time::timeout(Self::MUTATOR_TIMEOUT, self.session.unpause(handle)).await {
+            Ok(result) => {
+                result.map_err(|err| TideError::Internal(format!("torrent resume failed: {err}")))
+            }
+            Err(_) => Err(TideError::Internal(
+                "torrent resume timed out (engine busy)".into(),
+            )),
+        }
     }
 
     pub async fn set_only_files(
@@ -324,10 +337,19 @@ impl TorrentEngine {
         files: &[usize],
     ) -> Result<(), TideError> {
         let set: std::collections::HashSet<usize> = files.iter().copied().collect();
-        self.session
-            .update_only_files(handle, &set)
-            .await
-            .map_err(|err| TideError::Internal(format!("file selection failed: {err}")))
+        match tokio::time::timeout(
+            Self::MUTATOR_TIMEOUT,
+            self.session.update_only_files(handle, &set),
+        )
+        .await
+        {
+            Ok(result) => {
+                result.map_err(|err| TideError::Internal(format!("file selection failed: {err}")))
+            }
+            Err(_) => Err(TideError::Internal(
+                "file selection timed out (engine busy)".into(),
+            )),
+        }
     }
 
     /// Removes the torrent from the session. `delete_files` also removes

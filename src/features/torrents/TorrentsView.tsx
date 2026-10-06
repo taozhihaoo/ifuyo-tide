@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import { formatEta, formatSpeed } from "../../lib/format";
 import * as torrentApi from "./torrentApi";
@@ -134,6 +134,26 @@ function TorrentCard({
 }) {
   const [showFiles, setShowFiles] = useState(false);
 
+  // Stalled = running with zero bytes flowing for over a minute
+  // (purely presentational honesty: distinguishes "downloading" from
+  // "the swarm has nothing for us").
+  const [stalled, setStalled] = useState(false);
+  const lastProgress = useRef({ bytes: t.downloadedBytes, ts: Date.now() });
+  useEffect(() => {
+    if (lastProgress.current.bytes !== t.downloadedBytes) {
+      lastProgress.current = { bytes: t.downloadedBytes, ts: Date.now() };
+      setStalled(false);
+    }
+  }, [t.downloadedBytes]);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setStalled(
+        t.state === "running" && Date.now() - lastProgress.current.ts > 60_000,
+      );
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [t.state]);
+
   // Live speed + honest ETA (M9 §12 rules: only with reliable data).
   const speed = t.downloadSpeedBps ?? 0;
   const etaSecs =
@@ -141,18 +161,29 @@ function TorrentCard({
       ? Math.max(0, (t.totalBytes - t.downloadedBytes) / speed)
       : null;
 
+  const [actionError, setActionError] = useState<string | null>(null);
+  const run = (fn: () => Promise<void>) => {
+    fn()
+      .then(onChanged)
+      .catch((err) => setActionError(String(err)));
+  };
+
   const setSelection = (index: number) => {
     const selected = t.files
       .filter((x) => (x.index === index ? !x.selected : x.selected))
       .map((x) => x.index);
-    void torrentApi.setTorrentFileSelection(t.id, selected).then(onChanged);
+    run(() => torrentApi.setTorrentFileSelection(t.id, selected));
   };
 
   // §39/§66: the badge reflects the REAL state in user language — a
   // magnet that has not resolved its metadata yet is not "downloading",
   // and internal enum values never leak into the UI copy.
   const stateLabel =
-    t.phase === "metadata_pending" ? "Resolving metadata…" : t.state;
+    t.phase === "metadata_pending"
+      ? "Resolving metadata…"
+      : stalled && t.state === "running"
+        ? "Stalled"
+        : t.state;
 
   return (
     <li className="task-card" data-testid="torrent-card">
@@ -181,12 +212,17 @@ function TorrentCard({
           {t.errorMessage} ({t.errorCode})
         </div>
       )}
+      {actionError && (
+        <div className="dim" role="alert">
+          {actionError}
+        </div>
+      )}
       <div className="task-actions">
         {t.state === "running" && (
           <button
             type="button"
             className="btn btn-small"
-            onClick={() => void torrentApi.pauseTorrent(t.id).then(onChanged)}
+            onClick={() => run(() => torrentApi.pauseTorrent(t.id))}
           >
             Pause
           </button>
@@ -195,7 +231,7 @@ function TorrentCard({
           <button
             type="button"
             className="btn btn-small"
-            onClick={() => void torrentApi.resumeTorrent(t.id).then(onChanged)}
+            onClick={() => run(() => torrentApi.resumeTorrent(t.id))}
           >
             Resume
           </button>
