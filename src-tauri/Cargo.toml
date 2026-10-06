@@ -1,6 +1,6 @@
 [package]
 name = "ifuyo-tide"
-version = "1.0.8"
+version = "1.0.9"
 license = "MIT OR Apache-2.0"
 description = "ifuyo Tide — local-first downloader and progressive media player"
 edition = "2021"

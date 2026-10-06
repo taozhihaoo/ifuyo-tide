@@ -3,6 +3,20 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.9 — 2026-10-07
+
+Patch release.
+
+### Changed
+
+- **Selection now strictly precedes download for magnets too**: a
+  magnet joins the engine with an empty selection — when the DHT
+  delivers the metadata, nothing downloads until you pick files and
+  Resume. (Previously a few seconds of pieces could slip in before
+  the auto-pause.) Resume pushes the checked selection into the
+  engine before unpausing, and re-adds apply the selection at add
+  time.
+
 ## 1.0.8 — 2026-10-07
 
 Patch release.
