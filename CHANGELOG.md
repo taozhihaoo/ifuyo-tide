@@ -3,6 +3,15 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.5 — 2026-10-06
+
+Patch release.
+
+### Fixed
+
+- The "N files selected" counter stayed at its creation-time value
+  after changing checkboxes — it now reflects the actual selection.
+
 ## 1.0.4 — 2026-10-06
 
 Patch release from real-use validation of torrent actions.

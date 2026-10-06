@@ -312,6 +312,20 @@ impl TorrentRepository {
                 params![task_id, *index as i64, *is_selected as i64],
             )?;
         }
+        // Keep the task-level count truthful (§39: the UI reads this —
+        // it used to stay at the creation-time value after any change).
+        let count: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM torrent_files
+                 WHERE task_id = ?1 AND selected = 1",
+                params![task_id],
+                |row| row.get(0),
+            )?;
+        tx.execute(
+            "UPDATE torrent_tasks SET selected_count = ?2, updated_at = ?3
+             WHERE id = ?1",
+            params![task_id, count as u32, now_ms()],
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -563,5 +577,44 @@ mod tests {
         assert_eq!(loaded.selected_count, Some(2));
         assert_eq!(loaded.phase, "downloading");
         assert_eq!(repo.list_files("m1").unwrap().len(), 2);
+    }
+
+    /// 1.0.5 regression: the task-level selected_count used to stay at
+    /// its creation-time value after any checkbox change ("5 files
+    /// selected" over one checked file).
+    #[test]
+    fn update_selection_keeps_selected_count_truthful() {
+        let repo = TorrentRepository::open_in_memory().unwrap();
+        repo.insert_task(&sample("s1", "running", "downloading"))
+            .unwrap();
+        repo.replace_files(
+            "s1",
+            &"a".repeat(40),
+            &[
+                TorrentFileRecord {
+                    file_index: 0,
+                    info_hash: "a".repeat(40),
+                    relative_path: "a.mkv".into(),
+                    size: 8000,
+                    selected: true,
+                },
+                TorrentFileRecord {
+                    file_index: 1,
+                    info_hash: "a".repeat(40),
+                    relative_path: "b.txt".into(),
+                    size: 192,
+                    selected: true,
+                },
+            ],
+        )
+        .unwrap();
+
+        repo.update_selection("s1", &"a".repeat(40), &[(0, true), (1, false)])
+            .unwrap();
+
+        let loaded = repo.get_task("s1").unwrap().unwrap();
+        assert_eq!(loaded.selected_count, Some(1));
+        let files = repo.list_files("s1").unwrap();
+        assert_eq!(files.iter().filter(|f| f.selected).count(), 1);
     }
 }
