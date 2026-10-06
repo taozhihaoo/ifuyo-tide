@@ -3,6 +3,26 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.8 — 2026-10-07
+
+Patch release.
+
+### Added
+
+- **Reset partial data**: when a torrent's re-add keeps timing out
+  (stale partial data), the task card gains a "Reset partial data"
+  action — it removes exactly that task's partial files
+  (containment-checked against the download root) and zeroes its
+  progress, so the next Resume starts fresh. The task's source is
+  kept: magnet URIs and .torrent metadata copies are persisted, so
+  nothing ever needs to be re-provided by hand.
+
+### Fixed
+
+- **Delete data** on a task that is not in the engine (its startup
+  re-add had timed out) used to delete only the record and orphan the
+  downloaded files on disk; the files are now removed too.
+
 ## 1.0.7 — 2026-10-07
 
 Patch release.
