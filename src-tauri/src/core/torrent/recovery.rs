@@ -91,6 +91,28 @@ pub fn saved_selection(
     ))
 }
 
+/// Applies the DB selection (torrent_files rows) to the live engine
+/// handle. Called on Resume: the DB is the single source of truth for
+/// WHAT downloads — magnet intake starts the engine with an empty
+/// selection, so resume must push the checked files in explicitly.
+pub async fn sync_engine_selection(
+    engine: &TorrentEngine,
+    repo: &Arc<TorrentRepository>,
+    record: &TorrentTaskRecord,
+    handle: &Arc<librqbit::ManagedTorrent>,
+) -> Result<(), TideError> {
+    let files = repo.list_files(&record.id)?;
+    if files.is_empty() {
+        return Ok(()); // metadata not backfilled yet — nothing to sync
+    }
+    let indices: Vec<usize> = files
+        .iter()
+        .filter(|f| f.selected)
+        .map(|f| f.file_index as usize)
+        .collect();
+    engine.set_only_files(handle, &indices).await
+}
+
 /// Re-adds a persisted task to the engine, restoring the saved file
 /// selection. Shared by startup recovery and on-demand resume re-add.
 pub async fn readd_to_engine(
@@ -117,15 +139,12 @@ pub async fn readd_to_engine(
                 .magnet_uri
                 .clone()
                 .ok_or_else(|| TideError::Internal("magnet task without magnet URI".into()))?;
-            let added = engine
-                .add_magnet(uri, &record.storage_root, None, paused)
-                .await?;
-            // Magnets accept no only_files at add time (the metadata may
-            // still be resolving) — apply the saved selection after.
-            if let Some(files) = &only_files {
-                engine.set_only_files(&added.handle, files).await?;
-            }
-            Ok(added)
+            // Re-adds happen after the metadata is known — the
+            // selection applies at add time (no window where everything
+            // downloads).
+            engine
+                .add_magnet(uri, &record.storage_root, only_files, None, paused)
+                .await
         }
         (kind, _) => Err(TideError::Internal(format!(
             "unknown torrent source kind: {kind}"

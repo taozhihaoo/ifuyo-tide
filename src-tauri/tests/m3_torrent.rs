@@ -720,3 +720,101 @@ async fn reset_partial_files_removes_task_files_and_rejects_escape() {
     let _ = std::fs::remove_dir_all(outside);
     let _ = std::fs::remove_dir_all(temp_dir("seed-reset"));
 }
+
+/// 1.0.9: magnet intake starts with an EMPTY engine selection — when
+/// the metadata resolves nothing may download; the monitor backfills
+/// the file list and pauses for selection, and only the resume-time
+/// sync pushes the checked files into the engine.
+#[tokio::test]
+async fn magnet_empty_intake_downloads_nothing_until_resume_sync() {
+    let seeder = spawn_seeder("intake", &[("a.mkv", 128 * 1024), ("b.bin", 64 * 1024)]).await;
+    let engine = test_engine(temp_dir("intake-meta"), Some(vec![seeder.listen_addr])).await;
+    let work = temp_dir("intake-work");
+    let repo = std::sync::Arc::new(TorrentRepository::open_in_memory().unwrap());
+    let library = std::sync::Arc::new(LibraryService::new(std::sync::Arc::new(
+        LibraryRepository::open_in_memory().unwrap(),
+    )));
+
+    // Magnet-shaped row: source recorded, nothing else known yet.
+    let record = TorrentTaskRecord {
+        id: "intake-t1".into(),
+        info_hash: Some(seeder.info_hash.clone()),
+        source_kind: "magnet".into(),
+        magnet_uri: Some(format!("magnet:?xt=urn:btih:{}", seeder.info_hash)),
+        metadata_path: None,
+        metadata_sha256: None,
+        display_name: seeder.info_hash.clone(),
+        storage_root: work.clone(),
+        state: "ready".into(),
+        phase: "metadata_pending".into(),
+        total_bytes: None,
+        downloaded_bytes: 0,
+        uploaded_bytes: 0,
+        selected_count: None,
+        error_code: None,
+        error_message: None,
+        recovery_reason: None,
+        created_at: 0,
+        updated_at: 0,
+        completed_at: None,
+    };
+    repo.insert_task(&record).unwrap();
+
+    // Add to the engine LIVE with an EMPTY selection (the 1.0.9 intake).
+    let added = engine
+        .add_magnet(
+            record.magnet_uri.clone().unwrap(),
+            &work,
+            Some(Vec::new()),
+            Some(vec![seeder.listen_addr]),
+            false,
+        )
+        .await
+        .expect("add magnet");
+    for _ in 0..50 {
+        if engine.metadata_resolved(&added.handle) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(engine.metadata_resolved(&added.handle));
+
+    // One monitor tick: backfills the file list and auto-pauses for
+    // selection. The engine selection is still empty — nothing flows.
+    monitor::tick(&engine, &repo, &library).await.unwrap();
+    let after = repo.get_task("intake-t1").unwrap().unwrap();
+    assert_eq!(after.state, "paused", "auto-paused for selection");
+    assert_eq!(after.selected_count, Some(2));
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let stats = engine.stats(&added.handle);
+    assert_eq!(
+        stats.progress_bytes, 0,
+        "empty intake must not download anything"
+    );
+
+    // User checks only file 0, then hits Resume: the resume-time sync
+    // pushes the checked selection into the engine, then unpauses.
+    repo.update_selection("intake-t1", &seeder.info_hash, &[(0, true), (1, false)])
+        .unwrap();
+    ifuyo_tide_lib::core::torrent::recovery::sync_engine_selection(
+        &engine,
+        &repo,
+        &after,
+        &added.handle,
+    )
+    .await
+    .unwrap();
+    engine.resume(&added.handle).await.unwrap();
+    wait_completed(&engine, &added.info_hash, Duration::from_secs(60)).await;
+
+    let keep = work.join("a.mkv");
+    assert!(keep.exists() && std::fs::metadata(&keep).unwrap().len() == 128 * 1024);
+    let skip = work.join("b.bin");
+    assert!(
+        !skip.exists() || std::fs::metadata(&skip).unwrap().len() < 64 * 1024,
+        "deselected file must not be downloaded"
+    );
+    engine.shutdown().await;
+    let _ = std::fs::remove_dir_all(temp_dir("seed-intake"));
+    let _ = std::fs::remove_dir_all(work);
+}

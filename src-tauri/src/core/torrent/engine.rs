@@ -179,6 +179,10 @@ impl TorrentEngine {
         &self,
         uri: String,
         storage_root: &Path,
+        // Applies once the metadata resolves. Some(empty) = select
+        // nothing: the magnet-intake flow uses this so nothing
+        // downloads before the user picks files.
+        only_files: Option<Vec<usize>>,
         initial_peers: Option<Vec<SocketAddr>>,
         paused: bool,
     ) -> Result<AddedTorrent, TideError> {
@@ -187,7 +191,7 @@ impl TorrentEngine {
             .add(
                 AddTorrent::Url(uri.clone().into()),
                 storage_root,
-                None,
+                only_files,
                 initial_peers.or_else(|| self.initial_peers.clone()),
                 paused,
             )

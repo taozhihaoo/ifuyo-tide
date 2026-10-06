@@ -261,7 +261,18 @@ pub async fn create_torrent_task(
             let uri = record.magnet_uri.clone().expect("magnet uri");
             state
                 .torrent_engine
-                .add_magnet(uri, &record.storage_root, None, false)
+                .add_magnet(
+                    uri,
+                    &record.storage_root,
+                    // Empty selection until the user picks files: when
+                    // the DHT delivers the metadata NOTHING downloads —
+                    // the monitor backfills the file list and pauses for
+                    // selection (M3 §23), and resume syncs the checked
+                    // files into the engine.
+                    Some(Vec::new()),
+                    None,
+                    false,
+                )
                 .await?
         }
         "torrent_file" => {
@@ -406,7 +417,19 @@ pub async fn resume_torrent(state: State<'_, AppState>, id: String) -> Result<()
         .ok_or_else(|| TideError::InvalidInput("torrent metadata is not resolved yet".into()))?;
     let engine = &state.torrent_engine;
     match engine.handle_for(&hash) {
-        Some(handle) => engine.resume(&handle).await?,
+        Some(handle) => {
+            // The DB rows are the single source of truth for WHAT
+            // downloads (magnet intake starts with an empty engine
+            // selection) — sync before unpausing.
+            crate::core::torrent::recovery::sync_engine_selection(
+                engine,
+                &state.torrent_repository,
+                &record,
+                &handle,
+            )
+            .await?;
+            engine.resume(&handle).await?;
+        }
         None => {
             // Not in the session — the startup re-add may have timed out
             // (1.0.4 bounded recovery on stale partial data). Re-add on
