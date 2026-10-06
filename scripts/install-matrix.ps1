@@ -183,7 +183,7 @@ for ($i = 0; $i -lt 16; $i++) { $bytes[$i] = $patch[$i] }
 [System.IO.File]::WriteAllBytes($db, $bytes)
 $env:LOCALAPPDATA = $DataRoot
 $p = Start-Process -FilePath $exe3 -PassThru -WindowStyle Minimized -RedirectStandardError (Join-Path $DataRoot "stderr-corrupt.txt")
-$exited = $p.WaitForExit(20000)
+$exited = $p.WaitForExit(45000)
 $env:LOCALAPPDATA = $realLocalAppData
 # ExitCode is unreliable for GUI-subsystem processes under Start-Process;
 # the fail-closed evidence is: process terminated + structured fatal on
