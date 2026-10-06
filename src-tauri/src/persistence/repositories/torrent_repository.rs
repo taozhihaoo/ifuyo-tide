@@ -314,13 +314,12 @@ impl TorrentRepository {
         }
         // Keep the task-level count truthful (§39: the UI reads this —
         // it used to stay at the creation-time value after any change).
-        let count: i64 = tx
-            .query_row(
-                "SELECT COUNT(*) FROM torrent_files
+        let count: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM torrent_files
                  WHERE task_id = ?1 AND selected = 1",
-                params![task_id],
-                |row| row.get(0),
-            )?;
+            params![task_id],
+            |row| row.get(0),
+        )?;
         tx.execute(
             "UPDATE torrent_tasks SET selected_count = ?2, updated_at = ?3
              WHERE id = ?1",
