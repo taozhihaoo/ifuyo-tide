@@ -3,6 +3,32 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.4 — 2026-10-06
+
+Patch release from real-use validation of torrent actions.
+
+### Fixed
+
+- **Pause/Resume/File-selection could hang silently**: the IPC awaited
+  librqbit session operations that can stall indefinitely on a torrent
+  stuck mid-add — the click did nothing, with no error anywhere.
+  Session mutators are now bounded (15 s) and return a structured
+  error, which the UI displays instead of swallowing.
+- **Phantom "Running" over a paused engine**: startup recovery re-adds
+  torrents paused and marks rows ready/resumable, but the completion
+  monitor "corrected" rows to running on its first tick with zero
+  bytes flowing. The monitor now writes only on real byte progress;
+  only the user's resume (or actual flow) can say Running.
+- Startup recovery bounds each engine re-add (60 s per task) so one
+  stale-partial torrent can no longer wedge recovery for the whole
+  session (the row records `readd_timeout` and stays resumable).
+
+### Improved
+
+- Torrents view shows **Stalled** when a task has been running with
+  zero bytes flowing for over a minute — distinguishing "downloading"
+  from "the swarm has nothing for us" (honest-state rule, §39).
+
 ## 1.0.3 — 2026-10-06
 
 Patch release: fixes the most user-visible launch defect.
