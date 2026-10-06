@@ -3,6 +3,18 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.0.7 — 2026-10-07
+
+Patch release.
+
+### Improved
+
+- Torrent actions show progress: while Resume re-adds a torrent on
+  demand (which can take up to the engine timeout on a stuck task),
+  the buttons are disabled and read "Starting…/Pausing…" with a
+  "working…" hint — previously the click looked dead for up to a
+  minute. Re-entrant clicks are refused instead of stacked.
+
 ## 1.0.6 — 2026-10-07
 
 Patch release from real-use validation of torrent recovery.
