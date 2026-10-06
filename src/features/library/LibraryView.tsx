@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useStrings } from "../../lib/useStrings";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { EmptyState } from "../../components/EmptyState";
 import {
@@ -39,6 +40,7 @@ export function LibraryView({
 }: {
   onPlay: (source: { kind: "library_item"; item_id: string }) => void;
 }) {
+  const strings = useStrings();
   const [roots, setRoots] = useState<LibraryRootDto[]>([]);
   const [page, setPage] = useState<ItemPageDto | null>(null);
   const [search, setSearch] = useState("");
@@ -97,10 +99,14 @@ export function LibraryView({
         setScanning(false);
         setNotice(
           progress.status === "cancelled"
-            ? "Scan cancelled — the index is unchanged."
-            : `Scan ${progress.status}: ${progress.filesSeen} files, +${progress.added} added, ${progress.missing} missing${
-                progress.errors > 0 ? `, ${progress.errors} errors` : ""
-              }.`,
+            ? strings.libraryView.scanCancelled
+            : strings.libraryView.scanFinished(
+                progress.status,
+                progress.filesSeen,
+                progress.added,
+                progress.missing,
+                progress.errors,
+              ),
         );
         void refresh();
       }
@@ -142,32 +148,35 @@ export function LibraryView({
   const anyRoot = roots.length > 0;
 
   return (
-    <section className="view" aria-label="Library">
+    <section className="view" aria-label={strings.libraryView.title}>
       <div className="view-header">
-        <h2>Library</h2>
+        <h2>{strings.libraryView.title}</h2>
         <span className="dim" data-testid="library-roots">
           {anyRoot
-            ? `${roots.filter((r) => r.enabled).length} of ${roots.length} folders enabled`
-            : "No library folders yet"}
+            ? strings.libraryView.foldersEnabled(
+                roots.filter((r) => r.enabled).length,
+                roots.length,
+              )
+            : strings.libraryView.noFolders}
         </span>
         <span className="task-spacer" />
         <button
           type="button"
           className="btn btn-small"
           disabled={scanning || !anyRoot}
-          title={anyRoot ? "Rescan all enabled folders" : "Add a folder in Settings first"}
+          title={anyRoot ? strings.libraryView.rescanTitle : strings.libraryView.addInSettingsTitle}
           onClick={() => void startScan()}
         >
-          {scanning ? "Scanning…" : "Scan"}
+          {scanning ? strings.libraryView.scanning : strings.common.scan}
         </button>
         {scanning && scanProgress && (
           <button
             type="button"
             className="btn btn-small btn-danger"
-            aria-label="Cancel scan"
+            aria-label={strings.libraryView.cancelScan}
             onClick={() => void cancelScan(scanProgress.rootId).catch(() => {})}
           >
-            Cancel
+            {strings.libraryView.cancel}
           </button>
         )}
       </div>
@@ -176,19 +185,19 @@ export function LibraryView({
       {notice && <div className="banner banner-ok" role="status">{notice}</div>}
       {scanProgress?.status === "running" && (
         <div className="banner" role="status" data-testid="scan-progress">
-          Scanning… {scanProgress.filesSeen.toLocaleString()} files
+          {strings.libraryView.scanningBanner(scanProgress.filesSeen)}
         </div>
       )}
 
       <input
         className="library-search"
         value={search}
-        placeholder="Search by name or path…"
+        placeholder={strings.libraryView.searchPlaceholder}
         onChange={(e) => setSearch(e.target.value)}
-        aria-label="Library search"
+        aria-label={strings.libraryView.searchAria}
       />
 
-      <div className="library-filters" role="tablist" aria-label="Library filters">
+      <div className="library-filters" role="tablist" aria-label={strings.libraryView.filtersAria}>
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -202,27 +211,24 @@ export function LibraryView({
       </div>
 
       {!listLoaded ? (
-        <EmptyState title="Loading library…" hint="Reading the local index." />
+        <EmptyState title={strings.libraryView.loadingTitle} hint={strings.libraryView.loadingHint} />
       ) : !anyRoot ? (
         <EmptyState
-          title="No library folders"
-          hint="Add a folder under Settings → Library Folders, or complete a download — finished downloads enter the library automatically."
+          title={strings.libraryView.noFoldersTitle}
+          hint={strings.libraryView.noFoldersHint}
         />
       ) : !page || page.items.length === 0 ? (
-        <EmptyState
-          title="Nothing here yet"
-          hint="Press Scan to index the folder, or complete a download."
-        />
+        <EmptyState title={strings.libraryView.emptyTitle} hint={strings.libraryView.emptyHint} />
       ) : (
         <>
           <table className="library-table" data-testid="library-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Size</th>
-                <th>State</th>
-                <th>Actions</th>
+                <th>{strings.libraryView.colName}</th>
+                <th>{strings.libraryView.colType}</th>
+                <th>{strings.libraryView.colSize}</th>
+                <th>{strings.libraryView.colState}</th>
+                <th>{strings.libraryView.colActions}</th>
               </tr>
             </thead>
             <tbody>
@@ -231,17 +237,13 @@ export function LibraryView({
                   key={item.id}
                   item={item}
                   onPlay={onPlay}
-                  onRefresh={() => void act(() => refreshItem(item.id), "Item refreshed.")}
+                  onRefresh={() => void act(() => refreshItem(item.id), strings.libraryView.itemRefreshed)}
                   onRevealFile={() => void act(() => revealItem(item.id, false), "")}
                   onRevealFolder={() => void act(() => revealItem(item.id, true), "")}
-                  onRemove={() => void act(() => removeItem(item.id), "Removed from library (file kept).")}
+                  onRemove={() => void act(() => removeItem(item.id), strings.library.removedNotice)}
                   onDelete={() => {
-                    if (
-                      window.confirm(
-                        `Delete "${item.displayName}" from DISK? This cannot be undone. (Remove only takes it out of the library and keeps the file.)`,
-                      )
-                    ) {
-                      void act(() => deleteItem(item.id), "File deleted.");
+                    if (window.confirm(strings.libraryView.deleteConfirm(item.displayName))) {
+                      void act(() => deleteItem(item.id), strings.libraryView.fileDeleted);
                     }
                   }}
                 />
@@ -250,8 +252,11 @@ export function LibraryView({
           </table>
           <div className="library-pager">
             <span className="dim">
-              {page.total.toLocaleString()} items · page {page.page + 1} of{" "}
-              {Math.max(1, Math.ceil(page.total / page.pageSize))}
+              {strings.libraryView.itemsPaged(
+                page.total,
+                page.page + 1,
+                Math.max(1, Math.ceil(page.total / page.pageSize)),
+              )}
             </span>
             <button
               type="button"
@@ -263,7 +268,7 @@ export function LibraryView({
                 void refresh(idx);
               }}
             >
-              ← Prev
+              {strings.common.prev}
             </button>
             <button
               type="button"
@@ -275,7 +280,7 @@ export function LibraryView({
                 void refresh(idx);
               }}
             >
-              Next →
+              {strings.common.next}
             </button>
           </div>
         </>
@@ -301,6 +306,7 @@ function LibraryRow({
   onRemove: () => void;
   onDelete: () => void;
 }) {
+  const strings = useStrings();
   const playable = item.availability === "available";
   const missing = item.availability === "missing";
   return (
@@ -314,11 +320,11 @@ function LibraryRow({
         {/* §38: state text, never color-only; missing explains and offers
             actions rather than a bare "broken". */}
         <span className={`library-state state-${item.availability}`}>
-          {missing ? "File unavailable" : item.availability}
+          {missing ? strings.library.fileUnavailable : item.availability}
         </span>
         {missing && (
-          <button type="button" className="btn btn-small" onClick={onRefresh} title="Check the file again">
-            Recheck
+          <button type="button" className="btn btn-small" onClick={onRefresh} title={strings.libraryView.recheckTitle}>
+            {strings.library.recheck}
           </button>
         )}
       </td>
@@ -327,25 +333,25 @@ function LibraryRow({
           type="button"
           className="btn btn-small"
           disabled={!playable}
-          title={playable ? "Play through the Tide gateway" : "The file is not available"}
+          title={playable ? strings.libraryView.playTitle : strings.libraryView.notAvailableTitle}
           onClick={() => onPlay({ kind: "library_item", item_id: item.id })}
         >
-          Play
+          {strings.common.play}
         </button>
         <button type="button" className="btn btn-small" disabled={!playable} onClick={onRevealFile}>
-          Open
+          {strings.common.open}
         </button>
         <button type="button" className="btn btn-small" disabled={!playable} onClick={onRevealFolder}>
-          Folder
+          {strings.common.folder}
         </button>
         <button type="button" className="btn btn-small" onClick={onRefresh}>
-          Refresh
+          {strings.common.refresh}
         </button>
         <button type="button" className="btn btn-small" onClick={onRemove}>
-          Remove
+          {strings.common.remove}
         </button>
         <button type="button" className="btn btn-small btn-danger" onClick={onDelete}>
-          Delete file
+          {strings.libraryView.deleteFile}
         </button>
       </td>
     </tr>

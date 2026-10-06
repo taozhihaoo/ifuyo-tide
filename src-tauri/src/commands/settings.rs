@@ -47,6 +47,32 @@ pub fn set_onboarding_completed(state: State<'_, AppState>) -> Result<(), TideEr
     ipc_result("set_onboarding_completed", result)
 }
 
+const KEY_UI_LOCALE: &str = "ui_locale";
+const UI_LOCALES: [&str; 2] = ["en", "zh-CN"];
+
+/// 1.1.0 i18n: the persisted UI language ("en" default, "zh-CN").
+#[tauri::command]
+pub fn get_ui_locale(state: State<'_, AppState>) -> Result<String, TideError> {
+    let result = state.with_conn(|conn| {
+        Ok(state
+            .settings_repository
+            .get(conn, KEY_UI_LOCALE)?
+            .unwrap_or_else(|| "en".into()))
+    });
+    ipc_result("get_ui_locale", result)
+}
+
+#[tauri::command]
+pub fn set_ui_locale(state: State<'_, AppState>, locale: String) -> Result<(), TideError> {
+    if !UI_LOCALES.contains(&locale.as_str()) {
+        return Err(TideError::InvalidInput(format!(
+            "unsupported locale: {locale}"
+        )));
+    }
+    let result = state.with_conn(|conn| state.settings_repository.set(conn, KEY_UI_LOCALE, &locale));
+    ipc_result("set_ui_locale", result)
+}
+
 #[tauri::command]
 pub fn set_download_directory(
     state: State<'_, AppState>,

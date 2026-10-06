@@ -1,5 +1,5 @@
 import { EmptyState } from "../../components/EmptyState";
-import { strings } from "../../lib/strings";
+import { useStrings } from "../../lib/useStrings";
 import { PlayerPage } from "./PlayerPage";
 import type { PlaybackSessionInfo } from "./playbackApi";
 
@@ -17,6 +17,7 @@ export function PlayerView({
   session: PlaybackSessionInfo | null;
   onClose: () => void;
 }) {
+  const strings = useStrings();
   return session ? (
     <PlayerPage session={session} onClose={onClose} />
   ) : (

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PlaybackController, type PlayerSnapshot } from "./controller/PlaybackController";
 import type { PlaybackError } from "./errorModel";
-import { strings } from "../../lib/strings";
+import { useStrings } from "../../lib/useStrings";
 import {
   getPlaybackInfo,
   reportPlaybackPosition,
@@ -28,6 +28,7 @@ export function PlayerPage({
   session: PlaybackSessionInfo;
   onClose: () => void;
 }) {
+  const strings = useStrings();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<PlaybackController | null>(null);
   const [controller, setController] = useState<PlaybackController | null>(null);

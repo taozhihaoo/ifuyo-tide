@@ -86,7 +86,7 @@ describe("App (M1 downloads)", () => {
 
     expect(await screen.findByTestId("download-card")).toBeInTheDocument();
     expect(screen.getByText("sample.bin")).toBeInTheDocument();
-    expect(screen.getByText("running")).toBeInTheDocument();
+    expect(screen.getByText("Running")).toBeInTheDocument();
     // honest total, speed and ETA from the engine
     expect(screen.getByText(/512 B \/ 1.0 KB/)).toBeInTheDocument();
     expect(screen.getByText("2.0 KB/s")).toBeInTheDocument();
@@ -103,7 +103,7 @@ describe("App (M1 downloads)", () => {
     );
 
     render(<App />);
-    const input = await screen.findByLabelText("Download URL");
+    const input = await screen.findByLabelText("HTTP/HTTPS URL");
     fireEvent.input(input, { target: { value: "http://127.0.0.1/f.bin" } });
     fireEvent.click(screen.getByRole("button", { name: "Download" }));
 

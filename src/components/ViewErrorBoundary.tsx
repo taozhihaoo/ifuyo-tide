@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { strings } from "../lib/strings";
+import { getLocale } from "../lib/i18n";
+import { stringsFor } from "../lib/strings";
 
 /**
  * M9 §89 — frontend error boundary: one broken view must NOT white-
@@ -32,13 +33,16 @@ export class ViewErrorBoundary extends Component<Props, State> {
 
   render(): ReactNode {
     if (this.state.error) {
+      // Class component: read the active dictionary at render time (the
+      // app re-renders on locale change, so this stays current).
+      const strings = stringsFor(getLocale());
       return (
         <section className="view" aria-label={this.props.viewName ?? "View"}>
           <div className="view-header">
             <h2>{this.props.viewName ?? "View"}</h2>
           </div>
           <div className="banner banner-error" role="alert">
-            strings.errors.viewCrashed
+            {strings.errors.viewCrashed}
           </div>
           <div className="task-actions">
             <button

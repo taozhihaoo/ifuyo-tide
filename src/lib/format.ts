@@ -25,6 +25,26 @@ export const STATE_LABELS: Record<TaskState, string> = {
   cancelled: "Cancelled",
 };
 
+const STATE_LABELS_ZH: Record<TaskState, string> = {
+  created: "已创建",
+  ready: "就绪",
+  running: "下载中",
+  paused: "已暂停",
+  completed: "已完成",
+  failed: "失败",
+  cancelled: "已取消",
+};
+
+/** 1.1.0 i18n: user-facing state term for the active locale. Unknown
+ * states fall through raw (never invented). */
+export function stateLabel(state: string, locale: "en" | "zh-CN"): string {
+  if (locale === "zh-CN") {
+    const hit = STATE_LABELS_ZH[state as TaskState];
+    return hit ?? state;
+  }
+  return STATE_LABELS[state as TaskState] ?? state;
+}
+
 /** §11: speed display — one decimal, zero-state is "—", never
  * "0.0 MB/s" noise. Input is real backend bytes/sec. */
 export function formatSpeed(bps: number | null | undefined): string {
@@ -71,53 +91,100 @@ export function truncateMiddle(value: string, max = 48): string {
  * codes stay in the collapsible details (§17). */
 export function describeDownloadError(
   code: string | null | undefined,
+  locale: "en" | "zh-CN" = "en",
 ): { message: string; recovery: string } {
+  const zh = locale === "zh-CN";
   switch (code) {
     case "DOWNLOAD_HTTP_STATUS":
-      return {
-        message: "The server returned an error for this file.",
-        recovery: "Retry, or check the link in your browser.",
-      };
+      return zh
+        ? {
+            message: "服务器对该文件返回了错误。",
+            recovery: "重试，或在浏览器中检查该链接。",
+          }
+        : {
+            message: "The server returned an error for this file.",
+            recovery: "Retry, or check the link in your browser.",
+          };
     case "DOWNLOAD_NETWORK":
-      return {
-        message: "The connection was interrupted.",
-        recovery: "Retry — Tide resumes from where it stopped.",
-      };
+      return zh
+        ? {
+            message: "连接被中断。",
+            recovery: "重试——Tide 会从停止处续传。",
+          }
+        : {
+            message: "The connection was interrupted.",
+            recovery: "Retry — Tide resumes from where it stopped.",
+          };
     case "DOWNLOAD_TIMEOUT":
-      return {
-        message: "The server stopped responding.",
-        recovery: "Retry, or try again later.",
-      };
+      return zh
+        ? {
+            message: "服务器停止了响应。",
+            recovery: "重试，或稍后再试。",
+          }
+        : {
+            message: "The server stopped responding.",
+            recovery: "Retry, or try again later.",
+          };
     case "DOWNLOAD_CHECKSUM_MISMATCH":
-      return {
-        message: "The downloaded file is damaged (checksum mismatch).",
-        recovery: "Retry to re-download; the broken file is kept for diagnosis.",
-      };
+      return zh
+        ? {
+            message: "下载的文件已损坏（校验和不匹配）。",
+            recovery: "重试以重新下载；损坏的文件会保留用于排查。",
+          }
+        : {
+            message: "The downloaded file is damaged (checksum mismatch).",
+            recovery: "Retry to re-download; the broken file is kept for diagnosis.",
+          };
     case "DOWNLOAD_DISK_FULL":
-      return {
-        message: "The disk is full.",
-        recovery: "Free up space or choose another destination, then retry.",
-      };
+      return zh
+        ? {
+            message: "磁盘空间不足。",
+            recovery: "清理空间或更换目标目录后重试。",
+          }
+        : {
+            message: "The disk is full.",
+            recovery: "Free up space or choose another destination, then retry.",
+          };
     case "DOWNLOAD_FILE_WRITE":
     case "DOWNLOAD_PERMISSION_DENIED":
-      return {
-        message: "The file could not be written.",
-        recovery: "Check the destination folder permissions, then retry.",
-      };
+      return zh
+        ? {
+            message: "文件写入失败。",
+            recovery: "检查目标文件夹的权限后重试。",
+          }
+        : {
+            message: "The file could not be written.",
+            recovery: "Check the destination folder permissions, then retry.",
+          };
     case "DOWNLOAD_INVALID_URL":
-      return {
-        message: "This link is not a valid HTTP/HTTPS download URL.",
-        recovery: "Check the link and start a new download.",
-      };
+      return zh
+        ? {
+            message: "该链接不是有效的 HTTP/HTTPS 下载地址。",
+            recovery: "检查链接后重新创建下载。",
+          }
+        : {
+            message: "This link is not a valid HTTP/HTTPS download URL.",
+            recovery: "Check the link and start a new download.",
+          };
     case "DOWNLOAD_PRIVATE_ADDRESS_BLOCKED":
-      return {
-        message: "This address points to a private network.",
-        recovery: "Allow private addresses when creating the task if this is intended.",
-      };
+      return zh
+        ? {
+            message: "该地址指向私有网络。",
+            recovery: "如确有需要，请在创建任务时允许私有地址。",
+          }
+        : {
+            message: "This address points to a private network.",
+            recovery: "Allow private addresses when creating the task if this is intended.",
+          };
     default:
-      return {
-        message: "The download failed.",
-        recovery: "Retry the download.",
-      };
+      return zh
+        ? {
+            message: "下载失败。",
+            recovery: "重试该下载。",
+          }
+        : {
+            message: "The download failed.",
+            recovery: "Retry the download.",
+          };
   }
 }

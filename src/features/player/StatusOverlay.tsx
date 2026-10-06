@@ -1,4 +1,4 @@
-import { strings } from "../../lib/strings";
+import { useStrings } from "../../lib/useStrings";
 import type { PlayerSnapshot } from "./controller/PlaybackController";
 
 /**
@@ -18,6 +18,7 @@ export function StatusOverlay({
   sizeBytes: number | null;
   waitingForDownload: boolean;
 }) {
+  const strings = useStrings();
   switch (snapshot.state) {
     case "idle":
       return null;

@@ -318,6 +318,8 @@ pub fn run() {
             commands::settings::set_download_directory,
             commands::settings::get_onboarding_completed,
             commands::settings::set_onboarding_completed,
+            commands::settings::get_ui_locale,
+            commands::settings::set_ui_locale,
             // M1 HTTP download commands
             commands::download::start_http_download,
             commands::download::pause_download,

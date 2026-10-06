@@ -23,9 +23,16 @@ import { SpikeView } from "../features/spike/SpikeView";
 import { DownloadsView } from "../features/tasks/DownloadsView";
 import { TorrentsView } from "../features/torrents/TorrentsView";
 import { getSettings } from "../lib/api";
+import { loadLocale, useLocale } from "../lib/i18n";
 import { spikeAutorunEnabled } from "../lib/spikeApi";
 
 export default function App() {
+  // 1.1.0 i18n: the app subscribes to the locale so a language switch
+  // re-renders the whole tree; the persisted locale loads once here.
+  useLocale();
+  useEffect(() => {
+    void loadLocale();
+  }, []);
   const [view, setView] = useState<ViewId>("downloads");
   // M4(上): at most one playback session for the whole app — ONE
   // gateway, ONE player (§73/§74). Views request playback through

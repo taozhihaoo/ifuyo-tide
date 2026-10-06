@@ -5,7 +5,7 @@ import {
   setOnboardingCompleted,
 } from "./onboardingApi";
 import { open as pickDirectory } from "@tauri-apps/plugin-dialog";
-import { strings } from "../../lib/strings";
+import { useStrings } from "../../lib/useStrings";
 
 /**
  * M9(上) §6 — first-launch welcome flow: confirm the download
@@ -15,6 +15,7 @@ import { strings } from "../../lib/strings";
  * skipped when settings already exist (§6 "已有设置则跳过").
  */
 export function WelcomeFlow({ onDone }: { onDone: () => void }) {
+  const strings = useStrings();
   const [downloadDir, setDownloadDir] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

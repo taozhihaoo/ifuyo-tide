@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
-import { formatEta, formatSpeed } from "../../lib/format";
+import { useStrings } from "../../lib/useStrings";
+import { getLocale } from "../../lib/i18n";
+import { formatEta, formatSpeed, stateLabel as formatStateLabel } from "../../lib/format";
 import * as torrentApi from "./torrentApi";
 import type { TorrentDto } from "./torrentApi";
 
@@ -15,6 +17,7 @@ export function TorrentsView({
 }: {
   onPlay?: (source: { kind: "torrent_file"; task_id: string; file_index: number }) => void;
 }) {
+  const strings = useStrings();
   const [torrents, setTorrents] = useState<TorrentDto[]>([]);
   const [magnet, setMagnet] = useState("");
   const [torrentPath, setTorrentPath] = useState("");
@@ -81,20 +84,20 @@ export function TorrentsView({
       >
         <input
           value={magnet}
-          placeholder="Magnet URI"
+          placeholder={strings.torrentsView.magnetPlaceholder}
           onChange={(e) => setMagnet(e.target.value)}
-          aria-label="Magnet URI"
+          aria-label={strings.torrentsView.magnetPlaceholder}
         />
         <button type="submit" className="btn btn-primary" disabled={busy}>
-          Add magnet
+          {strings.torrentsView.addMagnet}
         </button>
       </form>
       <div className="spike-row">
         <input
           value={torrentPath}
-          placeholder="Path to .torrent file"
+          placeholder={strings.torrentsView.torrentPathPlaceholder}
           onChange={(e) => setTorrentPath(e.target.value)}
-          aria-label="Torrent file path"
+          aria-label={strings.torrentsView.torrentPathPlaceholder}
           style={{ flex: 1 }}
         />
         <button
@@ -103,7 +106,7 @@ export function TorrentsView({
           disabled={busy || !torrentPath.trim()}
           onClick={() => void add("torrent_file")}
         >
-          Add .torrent
+          {strings.torrentsView.addTorrent}
         </button>
       </div>
 
@@ -162,6 +165,7 @@ function TorrentCard({
       : null;
 
   const [actionError, setActionError] = useState<string | null>(null);
+  const strings = useStrings();
   // Actions can legitimately take a while (resume may re-add the
   // torrent on demand, bounded by engine timeouts) — show it, and
   // refuse re-entrant clicks instead of stacking requests.
@@ -190,8 +194,8 @@ function TorrentCard({
     t.phase === "metadata_pending"
       ? "Resolving metadata…"
       : stalled && t.state === "running"
-        ? "Stalled"
-        : t.state;
+        ? strings.torrentsView.stalled
+        : formatStateLabel(t.state, getLocale());
 
   return (
     <li className="task-card" data-testid="torrent-card">
@@ -218,10 +222,15 @@ function TorrentCard({
             const count = checked.length || t.selectedCount || 0;
             const size = checked.reduce((sum, f) => sum + f.size, 0);
             const sizeLabel =
-              checked.length > 0 ? ` · ${formatBytes(size)} selected` : "";
+              checked.length > 0
+                ? ` · ${strings.torrentsView.sizeSelected(formatBytes(size))}`
+                : "";
             return (
               <span>
-                {count} of {t.files.length || count} files{sizeLabel}
+                {t.files.length > 0
+                  ? strings.torrentsView.filesOf(count, t.files.length)
+                  : strings.torrentsView.filesSelected(count)}
+                {sizeLabel}
               </span>
             );
           })()}
@@ -245,7 +254,7 @@ function TorrentCard({
             disabled={busy}
             onClick={() => run(() => torrentApi.pauseTorrent(t.id))}
           >
-            {busy ? "Pausing…" : "Pause"}
+            {busy ? strings.torrentsView.pausing : strings.common.pause}
           </button>
         )}
         {(t.state === "paused" || (t.state === "ready" && t.phase !== "metadata_pending")) && (
@@ -255,7 +264,7 @@ function TorrentCard({
             disabled={busy}
             onClick={() => run(() => torrentApi.resumeTorrent(t.id))}
           >
-            {busy ? "Starting…" : "Resume"}
+            {busy ? strings.torrentsView.starting : strings.common.resume}
           </button>
         )}
         <button
@@ -263,36 +272,38 @@ function TorrentCard({
           className="btn btn-small"
           onClick={() => setShowFiles((v) => !v)}
         >
-          {showFiles ? "Hide files" : `Files (${t.files.length})`}
+          {showFiles
+            ? strings.torrentsView.hideFiles
+            : strings.torrentsView.showFiles(t.files.length)}
         </button>
-        {busy && <span className="dim">working…</span>}
+        {busy && <span className="dim">{strings.common.working}</span>}
         {t.recoveryReason === "readd_timeout" && (
           <button
             type="button"
             className="btn btn-small"
-            title="Remove the stale partial files so the torrent can start fresh — the source (magnet/torrent) is kept"
+            title={strings.torrentsView.resetTitle}
             disabled={busy}
             onClick={() => run(() => torrentApi.resetTorrentPartialData(t.id))}
           >
-            Reset partial data
+            {strings.torrentsView.resetPartialData}
           </button>
         )}
         <span className="task-spacer" />
         <button
           type="button"
           className="btn btn-small"
-          title="Remove from Tide — downloaded data is preserved"
-          onClick={() => void torrentApi.removeTorrent(t.id).then(onChanged)}
+          title={strings.torrentsView.removeTitle}
+          onClick={() => run(() => torrentApi.removeTorrent(t.id))}
         >
-          Remove
+          {strings.common.remove}
         </button>
         <button
           type="button"
           className="btn btn-small btn-danger"
-          title="Remove and delete downloaded data"
-          onClick={() => void torrentApi.deleteTorrentData(t.id).then(onChanged)}
+          title={strings.torrentsView.deleteDataTitle}
+          onClick={() => run(() => torrentApi.deleteTorrentData(t.id))}
         >
-          Delete data
+          {strings.torrentsView.deleteData}
         </button>
       </div>
       {showFiles && (
@@ -301,7 +312,7 @@ function TorrentCard({
             <li key={f.index} className={f.selected ? "" : "dim"}>
               <input
                 type="checkbox"
-                aria-label={`Download ${f.path}`}
+                aria-label={strings.torrentsView.downloadFile(f.path)}
                 checked={f.selected}
                 disabled={t.state === "completed" || busy}
                 onChange={() => setSelection(f.index)}

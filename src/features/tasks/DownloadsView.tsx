@@ -11,11 +11,14 @@ import { getWindowsSettings } from "../settings/windowsApi";
 import { notify } from "../settings/notify";
 import {
   describeDownloadError,
+  stateLabel,
   formatBytes as sharedFormatBytes,
   formatEta as sharedFormatEta,
   formatSpeed as sharedFormatSpeed,
 } from "../../lib/format";
 import type { DownloadDto } from "./downloadApi";
+import { useStrings } from "../../lib/useStrings";
+import { getLocale } from "../../lib/i18n";
 
 /**
  * M1 real-download view: URL → engine → live progress → pause/resume/
@@ -29,6 +32,7 @@ export function DownloadsView({
 }: {
   onPlay?: (source: { kind: "download_task"; task_id: string }) => void;
 }) {
+  const strings = useStrings();
   const [downloads, setDownloads] = useState<Map<string, DownloadDto>>(new Map());
   const [url, setUrl] = useState("");
   const [checksum, setChecksum] = useState("");
@@ -80,9 +84,9 @@ export function DownloadsView({
           .then((settings) => {
             const name = event.filename ?? "Download";
             if (event.state === "completed" && settings.notifyDownloadCompleted) {
-              void notify("Download completed", name);
+              void notify(strings.notifications.downloadCompleted, name);
             } else if (event.state === "failed" && settings.notifyDownloadFailed) {
-              void notify("Download failed", name);
+              void notify(strings.notifications.downloadFailed, name);
             }
           })
           .catch(() => {});
@@ -127,7 +131,7 @@ export function DownloadsView({
     setError(null);
     setNotice(null);
     if (!url.trim()) {
-      setError("Enter an HTTP/HTTPS URL.");
+      setError(strings.downloadsView.enterUrl);
       return;
     }
     // §87: double-click / double-submit guard.
@@ -138,7 +142,7 @@ export function DownloadsView({
         url: url.trim(),
         expectedChecksum: checksum.trim() || null,
       });
-      setNotice(`Download started (${downloadId.slice(0, 8)}…).`);
+      setNotice(strings.downloadsView.startedNotice(downloadId));
       setUrl("");
       setChecksum("");
       const snapshot = await api.getDownload(downloadId).catch(() => null);
@@ -153,9 +157,9 @@ export function DownloadsView({
   }, [url, checksum]);
 
   return (
-    <section className="view" aria-label="Downloads">
+    <section className="view" aria-label={strings.downloadsView.title}>
       <div className="view-header">
-        <h2>Downloads</h2>
+        <h2>{strings.downloadsView.title}</h2>
       </div>
 
       {error && <div className="banner banner-error" role="alert">{error}</div>}
@@ -170,30 +174,27 @@ export function DownloadsView({
       >
         <input
           value={url}
-          placeholder="HTTP/HTTPS URL"
+          placeholder={strings.downloadsView.urlPlaceholder}
           onChange={(e) => setUrl(e.target.value)}
-          aria-label="Download URL"
+          aria-label={strings.downloadsView.urlPlaceholder}
         />
         <input
           value={checksum}
-          placeholder="SHA-256 (optional)"
+          placeholder={strings.downloadsView.checksumPlaceholder}
           onChange={(e) => setChecksum(e.target.value)}
-          aria-label="Expected checksum"
+          aria-label={strings.downloadsView.checksumPlaceholder}
           style={{ maxWidth: 220 }}
         />
         <button type="submit" className="btn btn-primary" disabled={starting}>
-          Download
+          {strings.downloadsView.download}
         </button>
       </form>
 
       {!listLoaded ? (
         // §110: first meaningful UI — honest restore state, no fake empty.
-        <EmptyState title="Loading downloads…" hint="Restoring tasks from the local database." />
+        <EmptyState title={strings.downloadsView.loadingTitle} hint={strings.downloadsView.loadingHint} />
       ) : downloads.size === 0 ? (
-        <EmptyState
-          title="No downloads yet"
-          hint="Paste an HTTP/HTTPS URL above. Real M1 downloads with pause/resume/retry."
-        />
+        <EmptyState title={strings.downloadsView.emptyTitle} hint={strings.downloadsView.emptyHint} />
       ) : (
         <ul className="task-list">
           {[...downloads.values()].map((d) => (
@@ -237,12 +238,12 @@ interface UnlistenLike {
   (): void;
 }
 
-const PRIORITIES: Array<{ value: UserPriority; label: string }> = [
-  { value: "highest", label: "Highest" },
-  { value: "high", label: "High" },
-  { value: "normal", label: "Normal" },
-  { value: "low", label: "Low" },
-  { value: "background", label: "Background" },
+const PRIORITIES: Array<{ value: UserPriority; key: "highest" | "high" | "normal" | "low" | "background" }> = [
+  { value: "highest", key: "highest" },
+  { value: "high", key: "high" },
+  { value: "normal", key: "normal" },
+  { value: "low", key: "low" },
+  { value: "background", key: "background" },
 ];
 
 function DownloadCard({
@@ -256,6 +257,8 @@ function DownloadCard({
   const paused = d.state === "paused";
   const playable = d.downloadedBytes > 0;
   const [priority, setPriority] = useState<UserPriority>("normal");
+  const strings = useStrings();
+  const locale = getLocale();
   return (
     <li className="task-card" data-testid="download-card">
       <div className="task-main">
@@ -264,7 +267,7 @@ function DownloadCard({
         </span>
         <span className={`task-state state-${d.state}`}>
           {d.state === "failed" ? "⚠ " : d.state === "completed" ? "✓ " : ""}
-          {d.state}
+          {stateLabel(d.state, locale)}
         </span>
       </div>
       <div className="download-progress">
@@ -276,7 +279,7 @@ function DownloadCard({
         <div className="task-meta">
           <span>
             {formatBytes(d.downloadedBytes)}
-            {d.totalBytes != null ? ` / ${formatBytes(d.totalBytes)}` : " (unknown size)"}
+            {d.totalBytes != null ? ` / ${formatBytes(d.totalBytes)}` : ` ${strings.downloadsView.unknownSize}`}
           </span>
           <span>{formatSpeed(d.speedBps)}</span>
           <span>{d.etaSecs != null ? `ETA ${formatEta(d.etaSecs)}` : "ETA —"}</span>
@@ -285,9 +288,9 @@ function DownloadCard({
       </div>
       {d.state === "failed" && d.errorCode && (
         <div className="dim" role="alert">
-          {describeDownloadError(d.errorCode).message} — {describeDownloadError(d.errorCode).recovery}
+          {describeDownloadError(d.errorCode, locale).message} — {describeDownloadError(d.errorCode, locale).recovery}
           <details className="error-details">
-            <summary>Technical details</summary>
+            <summary>{strings.downloadsView.technicalDetails}</summary>
             {d.errorMessage} ({d.errorCode})
           </details>
         </div>
@@ -297,10 +300,10 @@ function DownloadCard({
           <button
             type="button"
             className="btn btn-small"
-            title="Play what has downloaded so far — streams through the Tide gateway"
+            title={strings.downloadsView.playTitle}
             onClick={() => onPlay({ kind: "download_task", task_id: d.downloadId })}
           >
-            Play
+            {strings.common.play}
           </button>
         )}
         {active && (
@@ -309,7 +312,7 @@ function DownloadCard({
             className="btn btn-small"
             onClick={() => void api.pauseDownload(d.downloadId)}
           >
-            Pause
+            {strings.common.pause}
           </button>
         )}
         {paused && (
@@ -318,7 +321,7 @@ function DownloadCard({
             className="btn btn-small"
             onClick={() => void api.resumeDownload(d.downloadId)}
           >
-            Resume
+            {strings.common.resume}
           </button>
         )}
         {(active || paused) && (
@@ -327,13 +330,13 @@ function DownloadCard({
             className="btn btn-small btn-danger"
             onClick={() => void api.cancelDownload(d.downloadId)}
           >
-            Cancel
+            {strings.common.cancel}
           </button>
         )}
         {active && (
           <select
             className="priority-select"
-            aria-label="Download priority"
+            aria-label={strings.downloadsView.priority.aria}
             value={priority}
             onChange={(e) => {
               const value = e.target.value as UserPriority;
@@ -343,7 +346,7 @@ function DownloadCard({
           >
             {PRIORITIES.map((p) => (
               <option key={p.value} value={p.value}>
-                {p.label}
+                {strings.downloadsView.priority[p.key]}
               </option>
             ))}
           </select>
@@ -354,7 +357,7 @@ function DownloadCard({
             className="btn btn-small"
             onClick={() => void api.retryDownload(d.downloadId)}
           >
-            Retry
+            {strings.common.retry}
           </button>
         )}
         {(d.state === "completed" || d.state === "failed" || d.state === "cancelled") && (
@@ -363,10 +366,10 @@ function DownloadCard({
             className="btn btn-small btn-danger"
             onClick={() => void api.deleteDownload(d.downloadId)}
           >
-            Delete
+            {strings.common.delete}
           </button>
         )}
-        {d.state === "completed" && <span className="dim">done ✓</span>}
+        {d.state === "completed" && <span className="dim">{strings.downloadsView.done}</span>}
       </div>
     </li>
   );

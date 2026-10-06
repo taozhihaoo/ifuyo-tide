@@ -1,3 +1,5 @@
+import { useStrings } from "../lib/useStrings";
+
 export type ViewId = "downloads" | "torrents" | "library" | "player" | "settings" | "spike";
 
 interface SidebarProps {
@@ -5,22 +7,25 @@ interface SidebarProps {
   onNavigate: (view: ViewId) => void;
 }
 
-const ITEMS: Array<{ id: ViewId; label: string }> = [
-  { id: "downloads", label: "Downloads" },
-  { id: "torrents", label: "Torrents" },
-  { id: "library", label: "Library" },
-  { id: "player", label: "Player" },
-  { id: "settings", label: "Settings" },
+type Item = { id: ViewId; key?: "downloads" | "torrents" | "library" | "player" | "settings"; label?: string };
+
+const ITEMS: Item[] = [
+  { id: "downloads", key: "downloads" },
+  { id: "torrents", key: "torrents" },
+  { id: "library", key: "library" },
+  { id: "player", key: "player" },
+  { id: "settings", key: "settings" },
 ];
 
 // M0.5 spike surface is a development prototype: never part of the
 // shipped 1.0 navigation (release builds compile the backend spike
 // commands to fail-closed stubs already).
-const DEV_ITEMS: Array<{ id: ViewId; label: string }> = [
+const DEV_ITEMS: Item[] = [
   { id: "spike", label: "Spike (M0.5)" },
 ];
 
 export function Sidebar({ active, onNavigate }: SidebarProps) {
+  const strings = useStrings();
   const items =
     import.meta.env.DEV ? [...ITEMS, ...DEV_ITEMS] : ITEMS;
   return (
@@ -35,12 +40,12 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
               aria-current={active === item.id ? "page" : undefined}
               onClick={() => onNavigate(item.id)}
             >
-              {item.label}
+              {item.key ? strings.sidebar[item.key] : (item.label ?? item.id)}
             </button>
           </li>
         ))}
       </ul>
-      <div className="sidebar-footer">local-first · no cloud</div>
+      <div className="sidebar-footer">{strings.sidebar.footer}</div>
     </nav>
   );
 }

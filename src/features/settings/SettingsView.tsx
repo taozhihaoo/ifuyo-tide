@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getLocale, setLocale, type Locale } from "../../lib/i18n";
+import { useStrings } from "../../lib/useStrings";
 import { getAppInfo, getSettings, setDownloadDirectory } from "../../lib/api";
 import { isTideApiError } from "../../lib/ipc";
 import type { AppInfoDto } from "../../lib/types";
@@ -26,6 +28,8 @@ import {
  * M9 / M8 respectively.
  */
 export function SettingsView() {
+  const strings = useStrings();
+  const [locale, setLocaleState] = useState<Locale>(getLocale());
   const [downloadDir, setDownloadDir] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +65,9 @@ export function SettingsView() {
       const bps = Math.max(0, Math.round(bandwidthInput * 1024 * 1024));
       await setGlobalBandwidthLimit(bps);
       setNotice(
-        bps === 0 ? "Bandwidth limit removed (unlimited)." : `Bandwidth limit set to ${bandwidthInput} MB/s.`,
+        bps === 0
+          ? strings.settingsView.bandwidthRemoved
+          : strings.settingsView.bandwidthSet(bandwidthInput),
       );
     } catch (err) {
       setError(errorMessage(err));
@@ -74,7 +80,7 @@ export function SettingsView() {
     const picked = await open({
       directory: true,
       multiple: false,
-      title: "Choose download directory",
+      title: strings.settingsView.chooseDirectoryTitle,
     });
     if (picked === null) {
       return; // user cancelled — not an error
@@ -82,7 +88,7 @@ export function SettingsView() {
     try {
       const settings = await setDownloadDirectory(picked);
       setDownloadDir(settings.downloadDir);
-      setNotice("Download directory saved.");
+      setNotice(strings.settingsView.directorySaved);
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -94,13 +100,13 @@ export function SettingsView() {
     const picked = await open({
       directory: true,
       multiple: false,
-      title: "Add a library folder",
+      title: strings.settingsView.addLibraryFolderTitle,
     });
     if (picked === null) return;
     try {
       const root = await addRoot(picked);
       setRoots(await listRoots());
-      setNotice(`Library folder added: ${root.displayName}. Press Scan in the Library to index it.`);
+      setNotice(strings.settingsView.libraryFolderAdded(root.displayName));
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -112,7 +118,7 @@ export function SettingsView() {
     try {
       await removeRoot(id);
       setRoots(await listRoots());
-      setNotice("Library folder removed (files on disk are untouched).");
+      setNotice(strings.settingsView.libraryFolderRemoved);
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -130,9 +136,9 @@ export function SettingsView() {
   }, []);
 
   return (
-    <section className="view" aria-label="Settings">
+    <section className="view" aria-label={strings.settingsView.title}>
       <div className="view-header">
-        <h2>Settings</h2>
+        <h2>{strings.settingsView.title}</h2>
       </div>
 
       {error && (
@@ -149,25 +155,34 @@ export function SettingsView() {
       <div className="settings-group">
         <div className="setting-row">
           <div className="setting-text">
-            <span className="setting-label">Download directory</span>
+            <span className="setting-label">{strings.settingsView.downloadDirectory}</span>
             <span className="setting-help" data-testid="download-dir">
               {loading
-                ? "Loading…"
-                : (downloadDir ?? "Not set — choose where downloaded files will go.")}
+                ? strings.settingsView.downloadDirectoryLoading
+                : (downloadDir ?? strings.settingsView.downloadDirectoryUnset)}
             </span>
           </div>
           <button type="button" className="btn" disabled={loading} onClick={() => void chooseDirectory()}>
-            Choose…
+            {strings.common.choose}
           </button>
         </div>
 
         <div className="setting-row">
           <div className="setting-text">
-            <span className="setting-label">Language</span>
-            <span className="setting-help">English only in M0; localization arrives in M9.</span>
+            <span className="setting-label">{strings.settingsView.language}</span>
+            <span className="setting-help">{strings.settingsView.languageHelp}</span>
           </div>
-          <select disabled defaultValue="en" aria-label="Language">
+          <select
+            value={locale}
+            onChange={(e) => {
+              const next = e.target.value as Locale;
+              setLocaleState(next);
+              setLocale(next);
+            }}
+            aria-label={strings.settingsView.language}
+          >
             <option value="en">English</option>
+            <option value="zh-CN">简体中文</option>
           </select>
         </div>
 
@@ -181,17 +196,17 @@ export function SettingsView() {
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">Windows (M8)</div>
+        <div className="settings-group-title">{strings.settingsView.windowsGroup}</div>
         {win && (
           <>
             <div className="setting-row">
               <div className="setting-text">
-                <span className="setting-label">Start with Windows</span>
-                <span className="setting-help">Off by default (§16.1). Toggles the OS login registration.</span>
+                <span className="setting-label">{strings.settingsView.startOnBoot}</span>
+                <span className="setting-help">{strings.settingsView.startOnBootHelp}</span>
               </div>
               <input
                 type="checkbox"
-                aria-label="Start with Windows"
+                aria-label={strings.settingsView.startOnBoot}
                 checked={autostart}
                 onChange={(e) => {
                   const on = e.target.checked;
@@ -207,14 +222,12 @@ export function SettingsView() {
             </div>
             <div className="setting-row">
               <div className="setting-text">
-                <span className="setting-label">Close to tray</span>
-                <span className="setting-help">
-                  Closing the window hides Tide; downloads continue. Off = closing exits.
-                </span>
+                <span className="setting-label">{strings.settingsView.closeToTray}</span>
+                <span className="setting-help">{strings.settingsView.closeToTrayHelp}</span>
               </div>
               <input
                 type="checkbox"
-                aria-label="Close to tray"
+                aria-label={strings.settingsView.closeToTray}
                 checked={win.closeToTray}
                 onChange={(e) => {
                   const next = { ...win, closeToTray: e.target.checked };
@@ -227,7 +240,7 @@ export function SettingsView() {
             </div>
             <div className="setting-row">
               <div className="setting-text">
-                <span className="setting-label">Notify: download completed</span>
+                <span className="setting-label">{strings.settingsView.notifyDownloadCompleted}</span>
               </div>
               <input
                 type="checkbox"
@@ -242,7 +255,7 @@ export function SettingsView() {
             </div>
             <div className="setting-row">
               <div className="setting-text">
-                <span className="setting-label">Notify: download failed</span>
+                <span className="setting-label">{strings.settingsView.notifyDownloadFailed}</span>
               </div>
               <input
                 type="checkbox"
@@ -260,13 +273,11 @@ export function SettingsView() {
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">Bandwidth (M7)</div>
+        <div className="settings-group-title">{strings.settingsView.bandwidthGroup}</div>
         <div className="setting-row">
           <div className="setting-text">
-            <span className="setting-label">Global download limit</span>
-            <span className="setting-help">
-              MB/s — playback (emergency) may still use up to this cap. 0 = unlimited.
-            </span>
+            <span className="setting-label">{strings.settingsView.globalLimit}</span>
+            <span className="setting-help">{strings.settingsView.globalLimitHelp}</span>
           </div>
           <div className="task-actions">
             <input
@@ -274,24 +285,24 @@ export function SettingsView() {
               min={0}
               step={1}
               className="bandwidth-input"
-              aria-label="Global download limit in megabytes per second"
+              aria-label={strings.settingsView.globalLimitAria}
               value={bandwidthInput}
               onChange={(e) => setBandwidthInput(Number(e.target.value) || 0)}
             />
             <button type="button" className="btn btn-small" onClick={() => void saveBandwidth()}>
-              Apply
+              {strings.common.apply}
             </button>
           </div>
         </div>
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">Library folders (M6)</div>
+        <div className="settings-group-title">{strings.settingsView.libraryGroup}</div>
         {roots.length === 0 ? (
           <div className="setting-row">
             <div className="setting-text">
               <span className="setting-help" data-testid="library-roots-empty">
-                No library folders yet — finished downloads still enter the library automatically.
+                {strings.settingsView.noLibraryFolders}
               </span>
             </div>
           </div>
@@ -301,10 +312,13 @@ export function SettingsView() {
               <div className="setting-text">
                 <span className="setting-label">{root.displayName}</span>
                 <span className="setting-help">
-                  {root.enabled ? "enabled" : "disabled"} · last scan:{" "}
+                  {root.enabled
+                    ? strings.settingsView.enabled
+                    : strings.settingsView.disabled}{" "}
+                  · {strings.settingsView.lastScan}{" "}
                   {root.lastScanAt != null
                     ? new Date(root.lastScanAt).toLocaleString()
-                    : "never"}{" "}
+                    : strings.settingsView.never}{" "}
                   · {root.scanStatus}
                 </span>
               </div>
@@ -314,14 +328,14 @@ export function SettingsView() {
                   className="btn btn-small"
                   onClick={() => void toggleLibraryFolder(root.id, !root.enabled)}
                 >
-                  {root.enabled ? "Disable" : "Enable"}
+                  {root.enabled ? strings.settingsView.disable : strings.settingsView.enable}
                 </button>
                 <button
                   type="button"
                   className="btn btn-small btn-danger"
                   onClick={() => void removeLibraryFolder(root.id)}
                 >
-                  Remove
+                  {strings.common.remove}
                 </button>
               </div>
             </div>
@@ -329,13 +343,10 @@ export function SettingsView() {
         )}
         <div className="setting-row">
           <div className="setting-text">
-            <span className="setting-help">
-              Explicit folders only — Tide never scans a whole drive. Download destination and
-              library folders are independent concepts.
-            </span>
+            <span className="setting-help">{strings.settingsView.libraryFoldersHelp}</span>
           </div>
           <button type="button" className="btn" onClick={() => void addLibraryFolder()}>
-            Add folder…
+            {strings.settingsView.addFolder}
           </button>
         </div>
       </div>
