@@ -137,9 +137,10 @@ function TorrentCard({
 }) {
   const [showFiles, setShowFiles] = useState(false);
 
-  // Stalled = running with zero bytes flowing for over a minute
-  // (purely presentational honesty: distinguishes "downloading" from
-  // "the swarm has nothing for us").
+  // Stalled = running, no bytes flowing, AND the engine reports zero
+  // speed for over a minute (1.2.2: progress bytes do not change during
+  // long piece rechecks, but data IS moving — the speed signal keeps
+  // the badge honest there).
   const [stalled, setStalled] = useState(false);
   const lastProgress = useRef({ bytes: t.downloadedBytes, ts: Date.now() });
   useEffect(() => {
@@ -151,7 +152,9 @@ function TorrentCard({
   useEffect(() => {
     const timer = window.setInterval(() => {
       setStalled(
-        t.state === "running" && Date.now() - lastProgress.current.ts > 60_000,
+        t.state === "running" &&
+          (t.downloadSpeedBps ?? 0) <= 0 &&
+          Date.now() - lastProgress.current.ts > 60_000,
       );
     }, 5000);
     return () => window.clearInterval(timer);

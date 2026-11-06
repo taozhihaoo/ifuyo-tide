@@ -3,6 +3,17 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.2.2 — 2026-10-07
+
+Patch release.
+
+### Fixed
+
+- The **Stalled** badge no longer appears while the engine reports an
+  active download speed: progress bytes only change when a whole piece
+  completes (minutes at low speeds), so the old progress-only check
+  showed "Stalled" during perfectly normal slow downloads.
+
 ## 1.2.1 — 2026-10-07
 
 Patch release: fixes a fake-completion defect found in real use.
