@@ -792,6 +792,15 @@ async fn magnet_empty_intake_downloads_nothing_until_resume_sync() {
         "empty intake must not download anything"
     );
 
+    // Second tick (1.2.1 regression): the empty-selection engine still
+    // reports finished=true — the monitor must NOT mark the paused,
+    // selection-pending task completed (the 1.2.0 fake-completion bug
+    // did exactly that five seconds after intake).
+    monitor::tick(&engine, &repo, &library).await.unwrap();
+    let still = repo.get_task("intake-t1").unwrap().unwrap();
+    assert_eq!(still.state, "paused", "must not fake-complete");
+    assert_eq!(still.downloaded_bytes, 0);
+
     // User checks only file 0, then hits Resume: the resume-time sync
     // pushes the checked selection into the engine, then unpauses.
     repo.update_selection("intake-t1", &seeder.info_hash, &[(0, true), (1, false)])

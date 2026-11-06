@@ -126,7 +126,18 @@ pub async fn tick(
         }
 
         let stats = engine.stats(&handle);
-        if !stats.finished {
+        // A torrent added with an EMPTY selection reports finished=true
+        // immediately (no pieces selected = nothing to download —
+        // librqbit semantics; its stats.total_bytes is then also 0,
+        // counting only selected files). Trusting that flag marked
+        // freshly backfilled magnet tasks "Completed" with zero bytes
+        // on disk (1.2.1 real-use finding). A genuine completion must
+        // have transferred the payload of the REAL torrent size (the
+        // row's total_bytes, backfilled from the metadata).
+        let real_total = record.total_bytes.unwrap_or(0);
+        let genuinely_complete =
+            stats.finished && real_total > 0 && stats.progress_bytes >= real_total;
+        if !genuinely_complete {
             // Write ONLY on real byte progress. State-diff writes are
             // forbidden here: recovery re-adds the engine PAUSED and
             // marks the row ready/resumable — "correcting" the row to
