@@ -3,6 +3,21 @@
 All notable changes to ifuyo Tide. This project keeps an honest,
 capability-based changelog — no marketing language.
 
+## 1.2.1 — 2026-10-07
+
+Patch release: fixes a fake-completion defect found in real use.
+
+### Fixed
+
+- **Magnet tasks could show "Completed" without downloading anything**:
+  a magnet joins the engine with an empty selection (nothing may
+  download before you pick files), and librqbit then reports the task
+  as "finished" immediately — with a total of zero, since it counts
+  only selected files. The completion monitor trusted that flag and
+  marked the task Completed seconds after the metadata arrived, with
+  0-byte placeholder files on disk. A completion now requires the
+  real torrent size (from the metadata) to be fully transferred.
+
 ## 1.2.0 — 2026-10-07
 
 Feature release: fixes "magnets never find peers" on networks where
