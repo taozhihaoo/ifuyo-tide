@@ -83,6 +83,17 @@ Check "non-admin-session" (-not $elevated) ("elevated=$elevated (per-user instal
 # --- preconditions -------------------------------------------------------------
 if (Test-Path $OldInstaller) { Check "old-installer-present" $true $OldInstaller } else { throw "missing $OldInstaller" }
 if (Test-Path $NewInstaller) { Check "new-installer-present" $true $NewInstaller } else { throw "missing $NewInstaller" }
+# Fail fast when a Tide instance is already running (the user using the
+# app): single-instance forwarding terminates every matrix-spawned test
+# process within seconds, which surfaces as "S2 process-alive" failures
+# that are environment conflicts, not product defects.
+$running = Get-Process ifuyo-tide -ErrorAction SilentlyContinue
+if ($running) {
+    Write-Output ("ENV-CONFLICT: a Tide instance is already running (pid {0}) - close it and re-run the matrix" -f ($running | Select-Object -First 1).Id)
+    exit 2
+}
+Check "no-running-instance" $true "clean start (single-instance isolation intact)"
+
 $pre = Find-RegistryEntry
 if ($pre) {
     # self-cleaning: remove any previous matrix installation
