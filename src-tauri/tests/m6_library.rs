@@ -145,7 +145,11 @@ fn uncovered_directory_is_never_marked_missing() {
     // must see the same database (the root row must exist where the
     // items are written — FK enforced).
     let repo = Arc::new(LibraryRepository::open_in_memory().unwrap());
-    let root_dir = temp_dir("uncovered");
+    // Canonicalize immediately: CI runners expose temp via an 8.3 short
+    // name (RUNNER~1), and the uncovered-prefix exemption matches
+    // against the canonical paths stored in the database — a raw
+    // temp_dir root would never prefix-match them.
+    let root_dir = path::canonicalize(&temp_dir("uncovered")).unwrap();
     let root = LibraryService::new(repo.clone())
         .add_root(&root_dir)
         .unwrap();
