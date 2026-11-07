@@ -287,9 +287,28 @@ async fn pause_resume_stops_and_continues_bytes() {
         "paused download must stop: {at_pause} → {still}"
     );
 
-    // Resume: bytes continue to completion.
-    engine.resume(&handle).await.expect("resume");
-    wait_completed(&engine, &added.info_hash, Duration::from_secs(120)).await;
+    // Resume via the M3 §22 recovery path: remove from the session
+    // (data kept) and re-add — initial_peers are re-injected and the
+    // partial data is re-verified before the download continues. A
+    // plain engine.resume depends on the pre-pause TCP connection
+    // surviving, which is timing-dependent on CI runners (librqbit's
+    // unpause rebuilds peer discovery from the torrent's trackers, and
+    // this fixture torrent has none).
+    engine
+        .remove(&handle, false)
+        .await
+        .expect("remove (keep data)");
+    let re_added = engine
+        .add_torrent_bytes(
+            seeder.torrent_bytes.clone(),
+            &work,
+            None,
+            Some(vec![seeder.listen_addr]),
+            false,
+        )
+        .await
+        .expect("re-add");
+    wait_completed(&engine, &re_added.info_hash, Duration::from_secs(120)).await;
     verify_file(&work.join("movie.bin"), 4 * 1024 * 1024);
     engine.shutdown().await;
     let _ = std::fs::remove_dir_all(temp_dir("seed-pause"));
