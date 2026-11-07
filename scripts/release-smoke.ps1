@@ -148,7 +148,19 @@ Check "launch-app-started" $started ("cold start to app.started = ${coldStartMs}
 $logLines = @(Read-NewLog $dataRoot)
 $panics = @($logLines | Select-String -Pattern 'panic|FATAL')
 Check "log-no-panic" ($panics.Count -eq 0) ("panic/fatal lines = " + $panics.Count)
-Check "process-alive" (-not $p.HasExited) ("pid=" + $p.Id)
+if ($p.HasExited) {
+    # Forensics: why did the cold-start process die? A live second Tide
+    # instance means single-instance forwarding killed this one (user
+    # double-clicked during the run) - environment conflict, not a defect.
+    $others = Get-Process ifuyo-tide -ErrorAction SilentlyContinue |
+        Where-Object { $_.Id -ne $p.Id } |
+        ForEach-Object { "pid=" + $_.Id + " ver=" + (Get-Item $_.Path -ErrorAction SilentlyContinue).VersionInfo.ProductVersion }
+    Check "process-alive" $false ("pid=" + $p.Id + " exitcode=" + $p.ExitCode + " | live-other-instances: " + ($others -join "; "))
+    $logTail = @(Read-Log $dataRoot) | Select-Object -Last 5
+    $logTail | ForEach-Object { Write-Output ("  0.1.0-log: " + $_.Substring(0, [Math]::Min(160, $_.Length))) }
+} else {
+    Check "process-alive" $true ("pid=" + $p.Id)
+}
 
 # user_version via python (SQLite read): 4 = all migrations applied
 $pyUserVersion = @'
