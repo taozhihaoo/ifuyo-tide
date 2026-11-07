@@ -333,6 +333,14 @@ async fn db_ahead_of_file_never_resumes_past_data() {
     let request = make_request(&server, "/slow/medium.bin", &work, len);
     let shared = engine.start(request, None).await.unwrap();
     let id = shared.request.download_id.clone();
+    // Wait for REAL progress before pausing: Running means the task
+    // started, not that bytes reached the disk — the .part file is
+    // only created when the sink opens (first chunk of the slow
+    // endpoint). On slow CI runners the pause can otherwise land
+    // before the response even arrives, and metadata(part_path)
+    // below fails NotFound (every sibling test here waits the same
+    // way — this one was racing on local-machine luck).
+    wait_progress_at_least(&engine, &id, 256 * 1024, Duration::from_secs(15)).await;
     let _before = pause_and_wait(&engine, &id).await;
     drop(engine);
     drop(repo.clone());
