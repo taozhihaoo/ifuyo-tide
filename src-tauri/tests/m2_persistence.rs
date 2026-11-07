@@ -563,9 +563,18 @@ async fn thousand_task_recovery_is_bounded() {
     let elapsed = started.elapsed();
     assert_eq!(outcomes.len(), 1000);
     // 1000 fs stat calls + 1000 updates: generous bound, P1 if exceeded.
+    // GitHub Actions windows runners (2-core VM, debug build, Defender
+    // scanning each .part file) measured ~20s vs ~1s locally — CI gets a
+    // wider bound that still fails a pathological regression (per-task
+    // re-scan or O(n²) work takes minutes, far past either bound).
+    let bound = if std::env::var_os("CI").is_some() {
+        Duration::from_secs(90)
+    } else {
+        Duration::from_secs(10)
+    };
     assert!(
-        elapsed < Duration::from_secs(10),
-        "1000-task recovery took {elapsed:?}"
+        elapsed < bound,
+        "1000-task recovery took {elapsed:?} (bound {bound:?})"
     );
     println!("1000-task recovery: {elapsed:?}");
     let _ = std::fs::remove_dir_all(db_file.parent().unwrap());
