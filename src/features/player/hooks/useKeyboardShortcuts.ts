@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * M5 §46 — keyboard shortcuts. Skips events originating from inputs,
@@ -12,6 +12,15 @@ export function useKeyboardShortcuts(handlers: {
   onMute: () => void;
   onFullscreen: () => void;
 }): void {
+  // Callers pass a fresh handlers object on every render (the player
+  // snapshot updates continuously). Keep the listener installed once
+  // and read the latest handlers through a ref instead of re-binding
+  // the global keydown listener on every timeupdate.
+  const handlersRef = useRef(handlers);
+  useEffect(() => {
+    handlersRef.current = handlers;
+  }, [handlers]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -29,31 +38,31 @@ export function useKeyboardShortcuts(handlers: {
         case " ":
         case "k":
           e.preventDefault();
-          handlers.onToggle();
+          handlersRef.current.onToggle();
           break;
         case "ArrowLeft":
           e.preventDefault();
-          handlers.onStep(-5);
+          handlersRef.current.onStep(-5);
           break;
         case "ArrowRight":
           e.preventDefault();
-          handlers.onStep(5);
+          handlersRef.current.onStep(5);
           break;
         case "ArrowUp":
           e.preventDefault();
-          handlers.onVolumeStep(0.1);
+          handlersRef.current.onVolumeStep(0.1);
           break;
         case "ArrowDown":
           e.preventDefault();
-          handlers.onVolumeStep(-0.1);
+          handlersRef.current.onVolumeStep(-0.1);
           break;
         case "m":
         case "M":
-          handlers.onMute();
+          handlersRef.current.onMute();
           break;
         case "f":
         case "F":
-          handlers.onFullscreen();
+          handlersRef.current.onFullscreen();
           break;
         default:
           break;
@@ -61,5 +70,5 @@ export function useKeyboardShortcuts(handlers: {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handlers]);
+  }, []);
 }

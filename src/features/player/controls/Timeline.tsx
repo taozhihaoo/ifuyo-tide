@@ -50,11 +50,17 @@ export function Timeline({
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging) {
-      if (duration) setPreviewSeconds(secondsAt(e.clientX));
-      return;
-    }
+    // Only a drag produces a visible preview; hovering used to
+    // re-render the whole timeline on every mouse move for nothing.
+    if (!dragging) return;
     setPreviewSeconds(secondsAt(e.clientX));
+  };
+
+  const cancelDrag = () => {
+    // A cancelled pointer never fires pointerup — leaving `dragging`
+    // true would freeze the seek head on the next interaction.
+    setDragging(false);
+    setPreviewSeconds(null);
   };
 
   const commit = (e: React.PointerEvent) => {
@@ -100,6 +106,7 @@ export function Timeline({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={commit}
+      onPointerCancel={cancelDrag}
       onPointerLeave={() => {
         if (!dragging) setPreviewSeconds(null);
       }}

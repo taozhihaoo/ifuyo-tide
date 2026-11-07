@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { getLocale, setLocale, type Locale } from "../../lib/i18n";
+import { setLocale, useLocale, type Locale } from "../../lib/i18n";
 import { useStrings } from "../../lib/useStrings";
 import { getAppInfo, getSettings, setDownloadDirectory } from "../../lib/api";
 import { isTideApiError } from "../../lib/ipc";
@@ -33,7 +33,9 @@ import {
  */
 export function SettingsView() {
   const strings = useStrings();
-  const [locale, setLocaleState] = useState<Locale>(getLocale());
+  // Reactive: App loads the persisted locale asynchronously, so a
+  // one-shot useState(getLocale()) would leave this select stale.
+  const locale: Locale = useLocale();
   const [downloadDir, setDownloadDir] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,21 +49,48 @@ export function SettingsView() {
 
   useEffect(() => {
     void (async () => {
-      try {
-        const settings = await getSettings();
-        setDownloadDir(settings.downloadDir);
-        setAppInfo(await getAppInfo());
-        setRoots(await listRoots());
-        setWin(await getWindowsSettings());
-        setAutostart(await autostartIsEnabled());
-        setPublicTrackers(await getPublicTrackersEnabled());
-      } catch (err) {
-        setError(errorMessage(err));
-      } finally {
-        setLoading(false);
+      // Independent settings must not be chained: one failing IPC used
+      // to leave every later section unloaded. allSettled keeps the
+      // values that did arrive and reports only the real failures.
+      const [settings, info, libraryRoots, windows, boot, trackers] =
+        await Promise.allSettled([
+          getSettings(),
+          getAppInfo(),
+          listRoots(),
+          getWindowsSettings(),
+          autostartIsEnabled(),
+          getPublicTrackersEnabled(),
+        ]);
+      if (settings.status === "fulfilled") setDownloadDir(settings.value.downloadDir);
+      if (info.status === "fulfilled") setAppInfo(info.value);
+      if (libraryRoots.status === "fulfilled") setRoots(libraryRoots.value);
+      if (windows.status === "fulfilled") setWin(windows.value);
+      if (boot.status === "fulfilled") setAutostart(boot.value);
+      if (trackers.status === "fulfilled") setPublicTrackers(trackers.value);
+      const failures = [settings, info, libraryRoots, windows, boot, trackers].filter(
+        (r): r is PromiseRejectedResult => r.status === "rejected",
+      );
+      if (failures.length > 0) {
+        setError(failures.map((r) => errorMessage(r.reason)).join(" · "));
       }
+      setLoading(false);
     })();
   }, []);
+
+  /** Optimistic toggle with an honest rollback on IPC failure. */
+  const updateWindows = useCallback(
+    (patch: Partial<WindowsSettingsDto>) => {
+      const prev = win;
+      if (!prev) return;
+      const next = { ...prev, ...patch };
+      setWin(next);
+      void setWindowsSettings(next).catch((err) => {
+        setWin(prev);
+        setError(errorMessage(err));
+      });
+    },
+    [win],
+  );
 
   const saveBandwidth = useCallback(async () => {
     setError(null);
@@ -181,9 +210,7 @@ export function SettingsView() {
           <select
             value={locale}
             onChange={(e) => {
-              const next = e.target.value as Locale;
-              setLocaleState(next);
-              setLocale(next);
+              setLocale(e.target.value as Locale);
             }}
             aria-label={strings.settingsView.language}
           >
@@ -192,13 +219,6 @@ export function SettingsView() {
           </select>
         </div>
 
-        <div className="setting-row">
-          <div className="setting-text">
-            <span className="setting-label">Start on boot</span>
-            <span className="setting-help">Disabled placeholder — Windows integration is M8.</span>
-          </div>
-          <input type="checkbox" disabled aria-label="Start on boot" />
-        </div>
       </div>
 
       <div className="settings-group">
@@ -235,13 +255,7 @@ export function SettingsView() {
                 type="checkbox"
                 aria-label={strings.settingsView.closeToTray}
                 checked={win.closeToTray}
-                onChange={(e) => {
-                  const next = { ...win, closeToTray: e.target.checked };
-                  setWin(next);
-                  void setWindowsSettings(next).catch((err) => {
-                    setError(errorMessage(err));
-                  });
-                }}
+                onChange={(e) => updateWindows({ closeToTray: e.target.checked })}
               />
             </div>
             <div className="setting-row">
@@ -252,11 +266,7 @@ export function SettingsView() {
                 type="checkbox"
                 aria-label="Notify on download completed"
                 checked={win.notifyDownloadCompleted}
-                onChange={(e) => {
-                  const next = { ...win, notifyDownloadCompleted: e.target.checked };
-                  setWin(next);
-                  void setWindowsSettings(next).catch(() => {});
-                }}
+                onChange={(e) => updateWindows({ notifyDownloadCompleted: e.target.checked })}
               />
             </div>
             <div className="setting-row">
@@ -267,11 +277,7 @@ export function SettingsView() {
                 type="checkbox"
                 aria-label="Notify on download failed"
                 checked={win.notifyDownloadFailed}
-                onChange={(e) => {
-                  const next = { ...win, notifyDownloadFailed: e.target.checked };
-                  setWin(next);
-                  void setWindowsSettings(next).catch(() => {});
-                }}
+                onChange={(e) => updateWindows({ notifyDownloadFailed: e.target.checked })}
               />
             </div>
           </>

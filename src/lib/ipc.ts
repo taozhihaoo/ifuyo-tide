@@ -8,10 +8,16 @@ import type { TideErrorPayload } from "./types";
 export class TideApiError extends Error {
   readonly code: string;
 
-  constructor(code: string, message: string) {
-    super(message);
+  constructor(code: string, message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
     this.name = "TideApiError";
     this.code = code;
+  }
+
+  /** Views often do `String(err)`; never leak the JS class name into
+   *  user-facing banners (§15 — raw internals stay in the console). */
+  override toString(): string {
+    return this.message;
   }
 }
 
@@ -39,6 +45,13 @@ export async function call<T>(
       const payload = raw as TideErrorPayload;
       throw new TideApiError(payload.code, payload.message);
     }
-    throw new TideApiError("IPC_FAILED", String(raw));
+    // Unstructured failure = the IPC bridge itself is broken. Keep the
+    // raw error as `cause` for devtools, but never show it in the UI
+    // (§15). No console noise on every failed call either.
+    throw new TideApiError(
+      "IPC_FAILED",
+      "Tide could not reach its local backend. Please restart the app.",
+      raw,
+    );
   }
 }

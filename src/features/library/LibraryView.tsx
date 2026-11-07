@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStrings } from "../../lib/useStrings";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { EmptyState } from "../../components/EmptyState";
@@ -91,16 +91,28 @@ export function LibraryView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, filter]);
 
+  // The scan listener is installed ONCE. Search/filter/page changes
+  // rebuild `refresh`; re-subscribing on every keystroke would tear
+  // down the listener mid-scan (and race listen()'s async resolve).
+  const refreshRef = useRef(refresh);
+  const stringsRef = useRef(strings);
   useEffect(() => {
+    refreshRef.current = refresh;
+    stringsRef.current = strings;
+  }, [refresh, strings]);
+
+  useEffect(() => {
+    let cancelled = false;
     let unlisten: UnlistenFn | null = null;
     void onScanProgress((progress) => {
       setScanProgress(progress);
       if (progress.status !== "running") {
         setScanning(false);
+        const copy = stringsRef.current.libraryView;
         setNotice(
           progress.status === "cancelled"
-            ? strings.libraryView.scanCancelled
-            : strings.libraryView.scanFinished(
+            ? copy.scanCancelled
+            : copy.scanFinished(
                 progress.status,
                 progress.filesSeen,
                 progress.added,
@@ -108,14 +120,17 @@ export function LibraryView({
                 progress.errors,
               ),
         );
-        void refresh();
+        void refreshRef.current();
       }
     }).then((fn) => {
-      unlisten = fn;
+      if (cancelled) fn();
+      else unlisten = fn;
     });
-    return () => unlisten?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refresh]);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const startScan = useCallback(async () => {
     setError(null);

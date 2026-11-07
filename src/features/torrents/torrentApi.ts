@@ -43,13 +43,14 @@ export function createTorrentTask(options: {
   sourceKind: "magnet" | "torrent_file";
   magnetUri?: string | null;
   torrentPath?: string | null;
-  destinationDir: string;
+  /** Omit to use the download directory chosen in Settings (Rust fallback). */
+  destinationDir?: string | null;
 }): Promise<{ id: string; infoHash: string }> {
   return call<{ id: string; infoHash: string }>("create_torrent_task", {
     sourceKind: options.sourceKind,
     magnetUri: options.magnetUri ?? null,
     torrentPath: options.torrentPath ?? null,
-    destinationDir: options.destinationDir,
+    destinationDir: options.destinationDir ?? null,
   });
 }
 

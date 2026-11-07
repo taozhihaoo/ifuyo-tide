@@ -49,11 +49,19 @@ export type LaunchRequestKind =
   | { kind: "open_media_file"; value: string }
   | { kind: "focus" };
 
-/** §61: validated launch requests from the backend. */
+/** §61: validated launch requests from the backend.
+ *
+ * The Rust router emits the whole `LaunchRequest` wrapper, i.e.
+ * `{ kind: { kind: "open_magnet", value: "magnet:…" } }` — the same
+ * shape `windows_drain_launch_requests` returns. Unwrap the wrapper
+ * here so BOTH the live event and the startup drain deliver the inner
+ * tagged union to the same handler. Passing the wrapper through would
+ * leave `request.value` undefined and silently drop every real launch
+ * (M8 §73/§74). */
 export function onLaunchRequest(
   handler: (request: LaunchRequestKind) => void,
 ): Promise<UnlistenFn> {
-  return listen<LaunchRequestKind>("app://launch-request", (event) => {
-    handler(event.payload);
+  return listen<LaunchRequestDto>("app://launch-request", (event) => {
+    handler(event.payload.kind);
   });
 }

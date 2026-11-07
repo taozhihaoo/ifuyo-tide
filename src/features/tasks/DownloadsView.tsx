@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import * as api from "./downloadApi";
 import {
@@ -42,59 +42,78 @@ export function DownloadsView({
   const [listLoaded, setListLoaded] = useState(false);
   // M7 §76: dev-only scheduler debug panel — REAL snapshot data only.
   const [sched, setSched] = useState<SchedulerSnapshotDto | null>(null);
+  // §87: a state variable cannot guard re-entrant submits — the form's
+  // Enter key keeps the stale closure while the request is in flight.
+  const startingRef = useRef(false);
+  // One notification per terminal state per task; a retry re-arms it.
+  const notifiedRef = useRef(new Set<string>());
+  // The listener is installed once — read the live dictionary via a ref
+  // so a language switch does not leave English notification text.
+  const notifyStringsRef = useRef(strings);
+  useEffect(() => {
+    notifyStringsRef.current = strings;
+  }, [strings]);
 
   useEffect(() => {
+    let cancelled = false;
     let unlisten: UnlistenLike | null = null;
-    void api.onDownloadProgress((event) => {
-      setDownloads((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(event.downloadId);
-        next.set(event.downloadId, {
-          downloadId: event.downloadId,
-          host: existing?.host ?? "",
-          filename: event.filename ?? existing?.filename ?? null,
-          state: event.state,
-          phase: event.phase,
-          downloadedBytes: event.progress.downloadedBytes,
-          totalBytes: event.progress.totalBytes,
-          percentage: event.progress.percentage,
-          speedBps: event.progress.speedBps,
-          etaSecs: event.progress.etaSecs,
-          errorCode: event.error?.code ?? null,
-          errorMessage: event.error?.message ?? null,
+    void api
+      .onDownloadProgress((event) => {
+        // State projection only — no side effects inside the updater
+        // (React may call it twice in StrictMode).
+        setDownloads((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(event.downloadId);
+          next.set(event.downloadId, {
+            downloadId: event.downloadId,
+            host: existing?.host ?? "",
+            filename: event.filename ?? existing?.filename ?? null,
+            state: event.state,
+            phase: event.phase,
+            downloadedBytes: event.progress.downloadedBytes,
+            totalBytes: event.progress.totalBytes,
+            percentage: event.progress.percentage,
+            speedBps: event.progress.speedBps,
+            etaSecs: event.progress.etaSecs,
+            errorCode: event.error?.code ?? null,
+            errorMessage: event.error?.message ?? null,
+          });
+          return next;
         });
-        return next;
-      });
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-  }, []);
 
-  // M8 §15: Windows notification on completion/failure — only when the
-  // user's setting allows; a notification failure never fails the task
-  // (§39). The download lifecycle itself is untouched.
-  useEffect(() => {
-    let unlisten: UnlistenLike | null = null;
-    void api.onDownloadProgress((event) => {
-      if (event.state === "completed" || event.state === "failed") {
-        void getWindowsSettings()
-          .then((settings) => {
-            const name = event.filename ?? "Download";
-            if (event.state === "completed" && settings.notifyDownloadCompleted) {
-              void notify(strings.notifications.downloadCompleted, name);
-            } else if (event.state === "failed" && settings.notifyDownloadFailed) {
-              void notify(strings.notifications.downloadFailed, name);
-            }
-          })
-          .catch(() => {});
-      }
-    }).then((fn) => {
-      unlisten = fn;
-    });
+        // M8 §15: Windows notification on completion/failure — only
+        // when the user's setting allows; a notification failure never
+        // fails the task (§39). The throttled event stream can repeat a
+        // terminal state, so notify once until the task is retried.
+        if (event.state === "created" || event.state === "running" || event.state === "paused") {
+          notifiedRef.current.delete(`${event.downloadId}:completed`);
+          notifiedRef.current.delete(`${event.downloadId}:failed`);
+        }
+        const terminalKey = `${event.downloadId}:${event.state}`;
+        if (
+          (event.state === "completed" || event.state === "failed") &&
+          !notifiedRef.current.has(terminalKey)
+        ) {
+          notifiedRef.current.add(terminalKey);
+          void getWindowsSettings()
+            .then((settings) => {
+              const name = event.filename ?? "Download";
+              const copy = notifyStringsRef.current.notifications;
+              if (event.state === "completed" && settings.notifyDownloadCompleted) {
+                void notify(copy.downloadCompleted, name);
+              } else if (event.state === "failed" && settings.notifyDownloadFailed) {
+                void notify(copy.downloadFailed, name);
+              }
+            })
+            .catch(() => {});
+        }
+      })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      });
     return () => {
+      cancelled = true;
       unlisten?.();
     };
   }, []);
@@ -113,7 +132,11 @@ export function DownloadsView({
         });
         setListLoaded(true);
       })
-      .catch(() => setListLoaded(true)); // IPC failure still leaves Loading
+      .catch((err) => {
+        // Honest UI: a failed restore is an error, not an empty library.
+        setListLoaded(true);
+        setError(String(err));
+      });
   }, []);
 
   // M7 §76/§78: dev diagnostics at 1 s — throttled, real data only.
@@ -134,8 +157,11 @@ export function DownloadsView({
       setError(strings.downloadsView.enterUrl);
       return;
     }
-    // §87: double-click / double-submit guard.
-    if (starting) return;
+    // §87: double-click / double-submit guard. A ref, not `starting` —
+    // pressing Enter in the URL field re-invokes the stale closure
+    // while the first request is still in flight.
+    if (startingRef.current) return;
+    startingRef.current = true;
     setStarting(true);
     try {
       const { downloadId } = await api.startDownload({
@@ -152,9 +178,10 @@ export function DownloadsView({
     } catch (err) {
       setError(String(err));
     } finally {
+      startingRef.current = false;
       setStarting(false);
     }
-  }, [url, checksum]);
+  }, [url, checksum, strings]);
 
   return (
     <section className="view" aria-label={strings.downloadsView.title}>

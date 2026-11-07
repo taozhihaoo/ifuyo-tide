@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { setDownloadDirectory } from "../../lib/api";
+import { BrandMark } from "../../components/Sidebar";
 import {
   getOnboardingCompleted,
   setOnboardingCompleted,
@@ -39,21 +40,24 @@ export function WelcomeFlow({ onDone }: { onDone: () => void }) {
     const picked = await pickDirectory({
       directory: true,
       multiple: false,
-      title: "Choose download directory",
+      title: strings.welcome.downloadDirectory,
     });
     if (picked !== null) setDownloadDir(picked);
   };
 
   return (
     <div className="app welcome" role="dialog" aria-label="Welcome to Tide">
+      <div className="welcome-glow" aria-hidden="true" />
       <div className="welcome-card">
-        <h1>{strings.welcome.title}</h1>
-        <p className="welcome-tagline">{strings.welcome.tagline}</p>
+        <div className="welcome-head">
+          <BrandMark size={48} />
+          <div>
+            <h1>{strings.welcome.title}</h1>
+            <p className="welcome-tagline">{strings.welcome.tagline}</p>
+          </div>
+        </div>
 
-        <p>
-          Tide downloads files over HTTP and BitTorrent and lets you watch
-          them while they download. Everything stays on your machine.
-        </p>
+        <p className="welcome-intro">{strings.welcome.intro}</p>
 
         <div className="setting-row">
           <div className="setting-text">
@@ -63,7 +67,7 @@ export function WelcomeFlow({ onDone }: { onDone: () => void }) {
             </span>
           </div>
           <button type="button" className="btn" onClick={() => void choose()}>
-            Choose…
+            {strings.welcome.choose}
           </button>
         </div>
 
@@ -80,8 +84,9 @@ export function WelcomeFlow({ onDone }: { onDone: () => void }) {
             disabled={busy}
             onClick={() => void finish(downloadDir)}
           >
-            Get started
+            {strings.welcome.getStarted}
           </button>
+          <span className="dim welcome-privacy">{strings.sidebar.footer}</span>
         </div>
       </div>
     </div>

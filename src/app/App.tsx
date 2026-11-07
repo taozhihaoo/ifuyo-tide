@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sidebar, type ViewId } from "../components/Sidebar";
+import { useStrings } from "../lib/useStrings";
 import { ViewErrorBoundary } from "../components/ViewErrorBoundary";
 import { LibraryView } from "../features/library/LibraryView";
 import { PlayerView } from "../features/player/PlayerView";
@@ -21,7 +22,9 @@ import { WelcomeFlow } from "../features/onboarding/WelcomeFlow";
 import { getOnboardingCompleted } from "../features/onboarding/onboardingApi";
 import { SpikeView } from "../features/spike/SpikeView";
 import { DownloadsView } from "../features/tasks/DownloadsView";
+import * as downloadApi from "../features/tasks/downloadApi";
 import { TorrentsView } from "../features/torrents/TorrentsView";
+import * as torrentApi from "../features/torrents/torrentApi";
 import { getSettings } from "../lib/api";
 import { loadLocale, useLocale } from "../lib/i18n";
 import { spikeAutorunEnabled } from "../lib/spikeApi";
@@ -29,7 +32,8 @@ import { spikeAutorunEnabled } from "../lib/spikeApi";
 export default function App() {
   // 1.1.0 i18n: the app subscribes to the locale so a language switch
   // re-renders the whole tree; the persisted locale loads once here.
-  useLocale();
+  const strings = useStrings();
+  const locale = useLocale();
   useEffect(() => {
     void loadLocale();
   }, []);
@@ -86,16 +90,21 @@ export default function App() {
 
   const playSource = useCallback(async (source: PlaybackSourceRequest) => {
     setPlaybackError(null);
+    const prev = sessionRef.current;
     try {
       // One session at a time: opening a new one stops the previous
       // (gateway access revoked, demands cancelled — M4(上) §55).
-      const prev = sessionRef.current;
-      if (prev) void stopPlaybackSession(prev.sessionId).catch(() => {});
+      // Await the teardown so the new session never races the old one.
+      if (prev) await stopPlaybackSession(prev.sessionId).catch(() => {});
       const info = await createPlaybackSession(source);
       sessionRef.current = info;
       setSession(info);
       setView("player");
     } catch (err) {
+      // The previous session (if any) is already torn down — never keep
+      // a dead session in the UI pointing at a revoked gateway.
+      sessionRef.current = null;
+      setSession(null);
       // M4(下) §99: honest human-safe message from the structured code.
       setPlaybackError(describePlaybackError(err));
     }
@@ -117,19 +126,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    drainLaunchRequests()
-      .then((requests) => {
-        for (const request of requests) intakeSource(request.kind);
-      })
-      .catch(() => {});
+    let cancelled = false;
     let unlisten: import("@tauri-apps/api/event").UnlistenFn | null = null;
-    onLaunchRequest(intakeSource)
+    // §74: requests that arrived before the frontend was ready are
+    // drained exactly once. Drain AFTER the live listener is installed
+    // so a launch landing in between is not lost.
+    const drain = () => {
+      void drainLaunchRequests()
+        .then((requests) => {
+          if (cancelled) return;
+          for (const request of requests) intakeSource(request.kind);
+        })
+        .catch(() => {});
+    };
+    void onLaunchRequest(intakeSource)
       .then((fn) => {
-        unlisten = fn;
+        // If the component unmounted before listen() resolved, the
+        // cleanup could not see `fn` — release it here instead.
+        if (cancelled) fn();
+        else unlisten = fn;
+        drain();
       })
-      .catch(() => {});
+      .catch(drain);
     return () => {
-      if (unlisten) unlisten();
+      cancelled = true;
+      unlisten?.();
     };
   }, [intakeSource]);
 
@@ -139,19 +160,19 @@ export default function App() {
     setPendingSource(null);
     try {
       if (source.kind === "open_http_url") {
-        const downloads = await import("../features/tasks/downloadApi");
-        const { downloadId } = await downloads.startDownload({
+        const { downloadId } = await downloadApi.startDownload({
           url: source.value,
           allowPrivate: true,
         });
         setNotice("Download started (" + downloadId.slice(0, 8) + "\u2026).");
         setView("downloads");
       } else if (source.kind === "open_magnet" || source.kind === "open_torrent_file") {
-        const torrents = await import("../features/torrents/torrentApi");
-        const created = await torrents.createTorrentTask(
+        // Destination is resolved by the backend from the user's
+        // Settings — never a machine-specific hard-coded path.
+        const created = await torrentApi.createTorrentTask(
           source.kind === "open_magnet"
-            ? { sourceKind: "magnet", magnetUri: source.value, destinationDir: "C:\\Users\\Gray\\Downloads" }
-            : { sourceKind: "torrent_file", torrentPath: source.value, destinationDir: "C:\\Users\\Gray\\Downloads" },
+            ? { sourceKind: "magnet", magnetUri: source.value }
+            : { sourceKind: "torrent_file", torrentPath: source.value },
         );
         setNotice("Torrent added (" + created.id.slice(0, 8) + "\u2026).");
         setView("torrents");
@@ -165,38 +186,62 @@ export default function App() {
     }
   }, [pendingSource]);
 
+  const viewTitles: Record<ViewId, string> = {
+    downloads: strings.sidebar.downloads,
+    torrents: strings.sidebar.torrents,
+    library: strings.sidebar.library,
+    player: strings.sidebar.player,
+    settings: strings.sidebar.settings,
+    spike: "Spike (M0.5)",
+  };
+
   return (
     <div className="app">
       <Sidebar active={view} onNavigate={setView} />
 
       <div className="main-col">
         <header className="topbar">
-          <span className="topbar-title">Tide</span>
-          <span className="topbar-note">M4 · progressive streaming through the Tide gateway</span>
+          <div className="topbar-crumb">
+            <span className="topbar-brand">Tide</span>
+            <span className="topbar-sep" aria-hidden="true">/</span>
+            <span className="topbar-title">{viewTitles[view]}</span>
+          </div>
+          <span className="topbar-spacer" />
+          <span className="status-pill" title={strings.sidebar.footer}>
+            <span className="status-pulse" aria-hidden="true" />
+            {locale === "zh-CN" ? "本地优先" : "Local-first"}
+          </span>
+          <span className="topbar-version">v1.2.2</span>
         </header>
 
-        {playbackError && (
-          <div className="banner banner-error" role="alert">
-            {playbackError}
+        {(playbackError || notice || pendingSource) && (
+          <div className="shell-notices">
+            {playbackError && (
+              <div className="banner banner-error" role="alert">
+                {playbackError}
+              </div>
+            )}
+            {notice && <div className="banner banner-ok" role="status">{notice}</div>}
+            {pendingSource && (
+              <div className="banner banner-ok" role="status">
+                <span className="banner-text">External source received.</span>{" "}
+                <span className="banner-actions">
+                  <button type="button" className="btn btn-small" onClick={() => void confirmSource()}>
+                    Add
+                  </button>
+                  <button type="button" className="btn btn-small" onClick={() => setPendingSource(null)}>
+                    Dismiss
+                  </button>
+                </span>
+              </div>
+            )}
           </div>
         )}
-        {notice && <div className="banner banner-ok" role="status">{notice}</div>}
         {/* M9(上) §6: welcome flow overlays the shell exactly once. */}
         {onboarded === false && (
           <WelcomeFlow
             onDone={() => setOnboarded(true)}
           />
-        )}
-        {pendingSource && (
-          <div className="banner banner-ok" role="status">
-            External source received.{" "}
-            <button type="button" className="btn btn-small" onClick={() => void confirmSource()}>
-              Add
-            </button>{" "}
-            <button type="button" className="btn btn-small" onClick={() => setPendingSource(null)}>
-              Dismiss
-            </button>
-          </div>
         )}
 
         <main className="content">

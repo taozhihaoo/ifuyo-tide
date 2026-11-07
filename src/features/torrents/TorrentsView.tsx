@@ -46,12 +46,12 @@ export function TorrentsView({
       setNotice(null);
       setBusy(true);
       try {
-        const destination = "C:\\Users\\Gray\\Downloads"; // resolved via Settings
+        // No hard-coded machine path: the backend resolves the destination
+        // from the persisted download directory (same as HTTP downloads).
         const result = await torrentApi.createTorrentTask({
           sourceKind: kind,
           magnetUri: kind === "magnet" ? magnet.trim() || null : null,
           torrentPath: kind === "torrent_file" ? torrentPath.trim() || null : null,
-          destinationDir: destination,
         });
         setNotice(`Torrent added (${result.id.slice(0, 8)}…).`);
         setMagnet("");

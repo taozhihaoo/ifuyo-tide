@@ -134,18 +134,35 @@ pub async fn create_torrent_task(
     source_kind: String,
     magnet_uri: Option<String>,
     torrent_path: Option<String>,
-    destination_dir: String,
+    destination_dir: Option<String>,
 ) -> Result<DownloadStartedLike, TideError> {
     let started = Instant::now();
     let _dirs = crate::app::paths::AppDirs::resolve()?;
     let id = crate::core::ids::new_id();
 
-    if !std::path::Path::new(&destination_dir).is_absolute() {
+    // Same contract as start_http_download (commands/download.rs): an
+    // omitted destination falls back to the persisted download
+    // directory. The UI must never hard-code a machine-specific path.
+    let destination = match destination_dir {
+        Some(dir) => PathBuf::from(dir),
+        None => {
+            let dir = state.with_conn(|conn| {
+                state
+                    .settings_repository
+                    .get(conn, crate::persistence::repositories::KEY_DOWNLOAD_DIR)
+            })?;
+            PathBuf::from(dir.ok_or_else(|| {
+                TideError::InvalidInput(
+                    "no download directory set — choose one in Settings first".into(),
+                )
+            })?)
+        }
+    };
+    if !destination.is_absolute() {
         return Err(TideError::InvalidInput(
             "download directory must be an absolute path".into(),
         ));
     }
-    let destination = PathBuf::from(&destination_dir);
     std::fs::create_dir_all(&destination)?;
 
     let (record, metadata_bytes, info_hash) = match source_kind.as_str() {
@@ -554,7 +571,7 @@ pub async fn reset_torrent_partial_data(
         ));
     }
     if let Some(hash) = &record.info_hash {
-        if let Some(handle) = state.torrent_engine.handle_for(hash) {
+        if state.torrent_engine.handle_for(hash).is_some() {
             return Err(TideError::InvalidInput(
                 "pause the torrent first (it is still held by the engine)".into(),
             ));

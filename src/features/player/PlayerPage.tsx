@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PlaybackController, type PlayerSnapshot } from "./controller/PlaybackController";
 import type { PlaybackError } from "./errorModel";
 import { useStrings } from "../../lib/useStrings";
+import { revealItem } from "../library/libraryApi";
 import {
   getPlaybackInfo,
   reportPlaybackPosition,
@@ -217,12 +218,10 @@ export function PlayerPage({
                   className="btn btn-small"
                   title="Open this file with the Windows default player"
                   onClick={() => {
-                    void import("../../features/library/libraryApi").then((m) =>
-                      // The library item id equals the playback owner for
-                      // library-sourced sessions; downloads keep playing
-                      // through Tide only.
-                      m.revealItem(session.sessionId, false).catch(() => {}),
-                    );
+                    // The library item id equals the playback owner for
+                    // library-sourced sessions; downloads keep playing
+                    // through Tide only.
+                    void revealItem(session.sessionId, false).catch(() => {});
                   }}
                 >
                   {strings.player.openInDefaultApp}
