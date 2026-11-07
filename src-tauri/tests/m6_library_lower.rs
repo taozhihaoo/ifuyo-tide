@@ -437,7 +437,9 @@ fn candidate(path: &Path, root: &Path) -> ScanCandidate {
 #[test]
 fn failure_injection_before_db_upsert_leaves_db_untouched() {
     let repo = LibraryRepository::open_in_memory().unwrap();
-    let dir = temp_dir("inj-before");
+    // Scanner seam walks the root as-is — canonicalize immediately
+    // (8.3 short names on CI runners; see inj-meta test).
+    let dir = path::canonicalize(&temp_dir("inj-before")).unwrap();
     let root = service().add_root(&dir).unwrap();
     let file = dir.join("a.mp4");
     write_file(&file, 1024);
@@ -472,7 +474,9 @@ fn failure_injection_after_commit_keeps_data() {
     // ONE shared repo: the service and the direct apply_scan/queries
     // must see the same database (the root row is FK-referenced).
     let repo = Arc::new(LibraryRepository::open_in_memory().unwrap());
-    let dir = temp_dir("inj-after");
+    // Scanner seam walks the root as-is — canonicalize immediately
+    // (8.3 short names on CI runners; see inj-meta test).
+    let dir = path::canonicalize(&temp_dir("inj-after")).unwrap();
     let root = LibraryService::new(repo.clone()).add_root(&dir).unwrap();
     let file = dir.join("b.mp4");
     write_file(&file, 1024);
@@ -503,7 +507,13 @@ fn failure_injection_after_commit_keeps_data() {
 #[test]
 fn failure_injection_metadata_read_is_partial() {
     let repo = Arc::new(LibraryRepository::open_in_memory().unwrap());
-    let dir = temp_dir("inj-meta");
+    // The scanner walks the root AS-IS (canonicalization lives at the
+    // service/add_root boundary, which this scanner-level test
+    // bypasses). GitHub runners expose temp via an 8.3 short name, so a
+    // raw root makes the §69 uncovered prefix non-canonical while the
+    // pre-indexed DB rows are canonical — the LIKE exemption never
+    // matches and later.mp4 goes Missing. Canonicalize immediately.
+    let dir = path::canonicalize(&temp_dir("inj-meta")).unwrap();
     let root = LibraryService::new(repo.clone()).add_root(&dir).unwrap();
     let seen = dir.join("seen.mp4");
     let later = dir.join("later.mp4");
