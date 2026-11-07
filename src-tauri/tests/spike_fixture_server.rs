@@ -48,7 +48,9 @@ async fn fixture_server_serves_ranges_of_generated_media() {
     // script (CI) legitimately lack them: SKIP, don't fail. Same
     // contract as the fixtures unit test (spike::fixtures).
     if matches!(media_dir(), Err(TideError::NotFound(_))) {
-        eprintln!("skip: media fixtures not generated (run scripts/generate-test-media.sh locally)");
+        eprintln!(
+            "skip: media fixtures not generated (run scripts/generate-test-media.sh locally)"
+        );
         return;
     }
     let server = fixture_server::start().await.expect("fixture server start");
