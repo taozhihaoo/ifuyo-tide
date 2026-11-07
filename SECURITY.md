@@ -1,9 +1,13 @@
 # Security Policy
 
-## Status: M11 — Release Candidate 0.2.0-rc.1
+## Status: 1.2.2 (current release)
 
 This document reflects the security boundaries as hardened in M10
-and re-verified at the M11 RC freeze (docs/M11-security-regression.md).
+and re-verified at the M11 RC freeze (docs/M11-security-regression.md),
+then shipped in 1.0 and maintained through the 1.1/1.2 releases — those
+maintenance releases changed UI, i18n and download behavior, not the
+security boundaries below. Security fixes for supported versions land in
+the latest release; see CHANGELOG.md for per-version changes.
 The full threat model, attack-surface inventory and audit findings
 live in docs/M10-threat-model.md and docs/M10-security-audit.md.
 Open security items are tracked in KNOWN_ISSUES.md (KI-1 ringbuf
@@ -17,12 +21,12 @@ issue tracker). Please do not open public issues for exploitable bugs.
 
 ## Security boundaries
 
-| Boundary | M0 measure |
+| Boundary | Control (as shipped) |
 |---|---|
 | WebView → Rust | Tauri IPC only; explicit command allow-list; every input re-validated in Rust (`security::` module). Frontend validation is UX, never a security control. |
 | Capabilities | Minimal: `core:default` + `dialog:allow-open`. No `fs`, `shell`, `http`, or process plugins/permissions. |
 | CSP | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost`. No remote scripts, iframes, or CDNs. |
-| Filesystem | The backend touches exactly two places: its own app-data directory (`%LOCALAPPDATA%\ifuyo\Tide\`) and, on explicit user action, the user-chosen download directory. No arbitrary path access exists at all in M0. |
+| Filesystem | The backend touches exactly two places: its own app-data directory (`%LOCALAPPDATA%\ifuyo\Tide\`) and, on explicit user action, the user-chosen download directory. No arbitrary path access exists in the shipped app. |
 | Errors | IPC failures are structured `{code, message}`; Rust internals, SQL errors and panics never reach the frontend; no `unwrap`/`expect` on user-input paths. |
 | Logs | Structured JSON lines, UTC timestamps, ids and event names only — never URLs, magnets, paths, or user-provided names. |
 | Dependencies | `Cargo.lock` committed; `--locked` verification; `cargo deny check` gates advisories/licenses/bans/sources (deny.toml). RustSec-ignored entries carry documented justification. |
