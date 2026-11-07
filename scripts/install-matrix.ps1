@@ -127,7 +127,7 @@ Check "S1-install-path-not-appdata" ($exe1 -and -not $exe1.StartsWith((Join-Path
 # --- S2: first launch of installed build (seeds data) ----------------------------
 Write-Output "--- S2 first launch + seed ($OldVersion)"
 $env:LOCALAPPDATA = $DataRoot
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "release-smoke.ps1") -ExePath $exe1 -ExpectedVersion $OldVersion -DataRoot $DataRoot -AllowConsoleSubsystem
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "release-smoke.ps1") -ExePath $exe1 -ExpectedVersion $OldVersion -DataRoot $DataRoot -AllowConsoleSubsystem -LegacyBuild
 $env:LOCALAPPDATA = $realLocalAppData
 Inherit-Smoke "S2-smoke"
 

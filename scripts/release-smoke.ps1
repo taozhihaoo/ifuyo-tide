@@ -28,7 +28,11 @@ param(
     [switch]$Clean,
     # Legacy releases (< 1.0.3) are console-subsystem; the matrix passes
     # this when smoke-testing the PREVIOUS installer as an upgrade source.
-    [switch]$AllowConsoleSubsystem
+    [switch]$AllowConsoleSubsystem,
+    # Legacy releases (< 1.0.6) carry KI-11 (the drain IPC aborts on
+    # startup - fixed later), so any "still alive" assertion races a
+    # known defect and is skipped for them.
+    [switch]$LegacyBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -148,7 +152,10 @@ Check "launch-app-started" $started ("cold start to app.started = ${coldStartMs}
 $logLines = @(Read-NewLog $dataRoot)
 $panics = @($logLines | Select-String -Pattern 'panic|FATAL')
 Check "log-no-panic" ($panics.Count -eq 0) ("panic/fatal lines = " + $panics.Count)
-if ($p.HasExited) {
+if ($LegacyBuild) {
+    Write-Output "SKIP process-alive (legacy build carries KI-11: startup drain aborts - fixed in 1.0.6; survival assertions would race a known defect)"
+    if ($p.HasExited) { Stop-Tide $p }
+} elseif ($p.HasExited) {
     # Forensics: why did the cold-start process die? A live second Tide
     # instance means single-instance forwarding killed this one (user
     # double-clicked during the run) - environment conflict, not a defect.
@@ -157,7 +164,7 @@ if ($p.HasExited) {
         ForEach-Object { "pid=" + $_.Id + " ver=" + (Get-Item $_.Path -ErrorAction SilentlyContinue).VersionInfo.ProductVersion }
     Check "process-alive" $false ("pid=" + $p.Id + " exitcode=" + $p.ExitCode + " | live-other-instances: " + ($others -join "; "))
     $logTail = @(Read-Log $dataRoot) | Select-Object -Last 5
-    $logTail | ForEach-Object { Write-Output ("  0.1.0-log: " + $_.Substring(0, [Math]::Min(160, $_.Length))) }
+    $logTail | ForEach-Object { Write-Output ("  log-tail: " + $_.Substring(0, [Math]::Min(160, $_.Length))) }
 } else {
     Check "process-alive" $true ("pid=" + $p.Id)
 }
